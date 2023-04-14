@@ -2,132 +2,67 @@ package eflint
 
 import (
 	"encoding/json"
-	"errors"
-	"io"
-	"reflect"
+	"fmt"
+	"log"
 )
 
-func mapParseField(input map[string]interface{}, field string, expected reflect.Type, required bool, template interface{}) (interface{}, error) {
-	// Check if the field is present
-	if _, ok := input[field]; !ok {
-		if required {
-			return nil, errors.New("field " + field + " is required")
-		} else {
-			return template, nil
-		}
+func (i *Input) UnmarshalJSON(data []byte) error {
+	type Alias Input
+	var aux Alias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	var tempMap map[string]interface{}
+	if err := json.Unmarshal(data, &tempMap); err != nil {
+		return err
 	}
 
-	// Check if the field can be converted to the expected type
-	if reflect.TypeOf(input[field]).ConvertibleTo(expected) {
-		return input[field], nil
-	} else {
-		return nil, errors.New("field " + field + " is not of type " + expected.String())
-	}
-}
-
-// ParseInput parses the given io.Reader as JSON into the Input struct. If
-// it fails, it returns an error
-func ParseInput(r io.Reader) (Input, error) {
-	var input Input
-	err := json.NewDecoder(r).Decode(&input)
-	if err != nil {
-		return Input{}, err
-	}
-
-	switch input.Kind {
-	case "ping":
-	case "handshake":
-		// Ensure no extra fields are present
-		if input.Phrases != nil || input.Updates {
-			return Input{}, errors.New("handshake should not contain phrases or updates")
-		}
-		break
+	var phrasesExpected bool
+	switch aux.Kind {
 	case "phrases":
-		// Ensure phrases are present
-		if input.Phrases == nil {
-			return Input{}, errors.New("phrases should contain phrases")
-		}
-
-		// Set updates to false if it is not present
-		if !input.Updates {
-			input.Updates = false
-		}
-
-		phrases, err := ParsePhrases(input.Phrases)
-
-		if err != nil {
-			return Input{}, err
-		}
-
-		input.Phrases = phrases
-	case "inspect":
-		return Input{}, errors.New("inspect is not supported yet")
+		phrasesExpected = true
+	case "handshake":
+		phrasesExpected = false
+	case "ping":
+		phrasesExpected = false
 	default:
-		return Input{}, errors.New("unknown kind")
+		return fmt.Errorf("unknown kind: %s", aux.Kind)
 	}
 
-	return input, nil
+	if phrasesExpected {
+		if _, ok := tempMap["phrases"]; !ok {
+			return fmt.Errorf("missing field: phrases")
+		}
+	} else {
+		if _, ok := tempMap["phrases"]; ok {
+			return fmt.Errorf("unexpected field: phrases")
+		}
+	}
+
+	i.Version = aux.Version
+	i.Kind = aux.Kind
+	i.Updates = aux.Updates
+	i.Phrases = aux.Phrases
+
+	return nil
 }
 
-func ParsePhrases(rawPhrases interface{}) ([]Phrase, error) {
-	if rawPhrases == nil {
-		return nil, errors.New("phrases should contain phrases")
-	} else if _, ok := rawPhrases.([]interface{}); !ok {
-		return nil, errors.New("phrases should be an array")
-	}
-	var phrases []Phrase
-
-	// Step 1: Parse each phrase as a Phrase struct
-	for _, phrase := range rawPhrases.([]interface{}) {
-		var p Phrase
-
-		if _, ok := phrase.(map[string]interface{}); !ok {
-			return nil, errors.New("phrases should be an array of objects")
-		}
-
-		phrase := phrase.(map[string]interface{})
-
-		// Try to parse the kind string (required)
-		kind, err := mapParseField(phrase, "kind", reflect.TypeOf(""), true, nil)
-		if err != nil {
-			return nil, err
-		}
-		p.Kind = kind.(string)
-
-		// Try to parse the stateless bool (optional)
-		stateless, err := mapParseField(phrase, "stateless", reflect.TypeOf(true), false, false)
-		if err != nil {
-			return nil, err
-		}
-		p.Stateless = stateless.(bool)
-
-		// Try to parse the updates bool (optional)
-		updates, err := mapParseField(phrase, "updates", reflect.TypeOf(true), false, false)
-		if err != nil {
-			return nil, err
-		}
-		p.Updates = updates.(bool)
-
-		// Parse the phrase itself
-		newPhrase, err := ParsePhrase(p.Kind, phrase)
-
-		if err != nil {
-			return nil, err
-		}
-
-		p.Phrase = newPhrase
-		phrases = append(phrases, p)
+func (p *Phrase) UnmarshalJSON(data []byte) error {
+	type Alias Phrase
+	var aux Alias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
 	}
 
-	return phrases, nil
-}
-
-func ParsePhrase(kind string, phrase map[string]interface{}) (interface{}, error) {
-	switch kind {
+	switch aux.Kind {
 	case "bquery":
 		fallthrough
 	case "iquery":
-		return ParseQuery(phrase)
+		var q Query
+		if err := json.Unmarshal(data, &q); err != nil {
+			return err
+		}
+		p.Expression = &q.Expression
 	case "create":
 		fallthrough
 	case "terminate":
@@ -135,318 +70,170 @@ func ParsePhrase(kind string, phrase map[string]interface{}) (interface{}, error
 	case "obfuscate":
 		fallthrough
 	case "trigger":
-		return parseStatement(phrase)
+		var s Statement
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		p.Operand = &s.Operand
 	case "afact":
-		return parseFact(phrase)
+		var af AtomicFact
+		if err := json.Unmarshal(data, &af); err != nil {
+			return err
+		}
+		p.Name = af.Name
+		p.Type = af.Type
+		p.Range = af.Range
+		p.DerivedFrom = af.DerivedFrom
+		p.HoldsWhen = af.HoldsWhen
+		p.ConditionedBy = af.ConditionedBy
+	case "cfact":
+		var cf CompositeFact
+		if err := json.Unmarshal(data, &cf); err != nil {
+			return err
+		}
+		p.Name = cf.Name
+		p.IdentifiedBy = cf.IdentifiedBy
+		p.DerivedFrom = cf.DerivedFrom
+		p.HoldsWhen = cf.HoldsWhen
+		p.ConditionedBy = cf.ConditionedBy
+	case "placeholder":
+		var ph Placeholder
+		if err := json.Unmarshal(data, &ph); err != nil {
+			return err
+		}
+		p.Name = ph.Name
+		p.For = ph.For
+	case "predicate":
+		var pred Predicate
+		if err := json.Unmarshal(data, &pred); err != nil {
+			return err
+		}
+		p.Name = pred.Name
+		p.IsInvariant = pred.IsInvariant
+		p.Expression = &pred.Expression
+	case "event":
+		var ev Event
+		if err := json.Unmarshal(data, &ev); err != nil {
+			return err
+		}
+		p.Name = ev.Name
+		p.RelatedTo = ev.RelatedTo
+		p.DerivedFrom = ev.DerivedFrom
+		p.HoldsWhen = ev.HoldsWhen
+		p.ConditionedBy = ev.ConditionedBy
+		p.SyncsWith = ev.SyncsWith
+		p.Creates = ev.Creates
+		p.Terminates = ev.Terminates
+		p.Obfuscates = ev.Obfuscates
+	case "act":
+		var act Act
+		if err := json.Unmarshal(data, &act); err != nil {
+			return err
+		}
+		p.Name = act.Name
+		p.Actor = act.Actor
+		p.RelatedTo = act.RelatedTo
+		p.DerivedFrom = act.DerivedFrom
+		p.HoldsWhen = act.HoldsWhen
+		p.ConditionedBy = act.ConditionedBy
+		p.SyncsWith = act.SyncsWith
+		p.Creates = act.Creates
+		p.Terminates = act.Terminates
+		p.Obfuscates = act.Obfuscates
+	case "duty":
+		var duty Duty
+		if err := json.Unmarshal(data, &duty); err != nil {
+			return err
+		}
+		p.Name = duty.Name
+		p.Holder = duty.Holder
+		p.Claimant = duty.Claimant
+		p.RelatedTo = duty.RelatedTo
+		p.DerivedFrom = duty.DerivedFrom
+		p.HoldsWhen = duty.HoldsWhen
+		p.ConditionedBy = duty.ConditionedBy
+		p.ViolatedWhen = &duty.ViolatedWhen
+	case "extend":
+		var ext Extend
+		if err := json.Unmarshal(data, &ext); err != nil {
+			return err
+		}
+		p.ParentKind = ext.ParentKind
+		p.Name = ext.Name
 	default:
-		return nil, errors.New("unknown kind")
+		return fmt.Errorf("unknown kind: " + aux.Kind)
 	}
+
+	p.Kind = aux.Kind
+	p.Stateless = aux.Stateless
+	p.Updates = aux.Updates
+
+	return nil
 }
 
-func ParseQuery(phrase map[string]interface{}) (interface{}, error) {
-	// Ensure that the phrase contains an expression
-	expression, err := mapParseField(phrase, "expression", objectType, true, nil)
-	if err != nil {
-		return nil, err
+func (e *Expression) UnmarshalJSON(data []byte) error {
+	log.Println("Unmarshalling expression", string(data))
+	var Primitive Primitive
+	if err := json.Unmarshal(data, &Primitive); err == nil {
+		e.Value = Primitive.Value
+		return nil
 	}
-	return parseExpression(expression.(map[string]interface{}))
+
+	var VariableReference []string
+	if err := json.Unmarshal(data, &VariableReference); err == nil {
+		if len(VariableReference) == 1 {
+			e.Value = VariableReference
+			return nil
+		}
+	}
+
+	var ConstructorApplication ConstructorApplication
+	if err := json.Unmarshal(data, &ConstructorApplication); err == nil {
+		e.Identifier = ConstructorApplication.Identifier
+		e.Operands = ConstructorApplication.Operands
+		return nil
+	}
+
+	return fmt.Errorf("unknown expression type")
 }
 
-func parseStatement(phrase map[string]interface{}) (interface{}, error) {
-	// Ensure that the phrase contains an operand
-	if operand, ok := phrase["operand"]; ok {
-		return parseExpression(operand)
-	} else {
-		return nil, errors.New("operand is required for create")
+func (p *Primitive) UnmarshalJSON(data []byte) error {
+	log.Println("Unmarshalling primitive", string(data))
+
+	var String string
+	if err := json.Unmarshal(data, &String); err == nil {
+		p.Value = String
+		return nil
 	}
 
-	// TODO: Should check the JSON contains nothing else
-}
-
-// TODO: Abstract this into parsers for each field, as they will be reused
-func parseFact(phrase map[string]interface{}) (interface{}, error) {
-	var fact Fact
-
-	// Fact has a name field (required)
-	if name, ok := phrase["name"]; ok {
-		if _, ok := name.(string); !ok {
-			return nil, errors.New("name should be a string")
-		}
-		fact.Name = name.(string)
-	} else {
-		return nil, errors.New("name is required")
-	}
-
-	// Fact has a type field (optional, defaults to string)
-	if factType, ok := phrase["type"]; ok {
-		switch factType {
-		case "String":
-			fallthrough
-		case "Int":
-			fact.Type = factType.(string)
-		default:
-			return nil, errors.New("type should be one of String or Int")
-		}
-	} else {
-		fact.Type = "String"
-	}
-
-	// Fact has a range field (optional)
-	if range_, ok := phrase["range"]; ok {
-		if _, ok := range_.([]interface{}); !ok {
-			return nil, errors.New("range should be an array")
-		}
-
-		for _, value := range range_.([]interface{}) {
-			expression, err := parseExpression(value)
-
-			if err != nil {
-				return nil, err
-			} else if _, ok := expression.(Primitive); !ok {
-				return nil, errors.New("range can only contain primitives")
-			}
-
-			fact.Range = append(fact.Range, expression)
+	var Number float64
+	if err := json.Unmarshal(data, &Number); err == nil {
+		if Number == float64(int64(Number)) {
+			p.Value = int64(Number)
+			return nil
+		} else {
+			return fmt.Errorf("float64 not supported")
 		}
 	}
 
-	// Fact has a derived-from field (optional)
-	if derivedFrom, ok := phrase["derived-from"]; ok {
-		// Make sure the derived-from is a map
-		if _, ok := derivedFrom.([]interface{}); !ok {
-			return nil, errors.New("derived-from should be an array")
-		}
-
-		for _, value := range derivedFrom.([]interface{}) {
-			expression, err := parseExpression(value)
-
-			if err != nil {
-				return nil, err
-			}
-
-			fact.DerivedFrom = append(fact.DerivedFrom, expression)
-		}
-	} else {
-		fact.DerivedFrom = []interface{}{}
+	var Boolean bool
+	if err := json.Unmarshal(data, &Boolean); err == nil {
+		p.Value = Boolean
+		return nil
 	}
 
-	// Fact has a holds-when field (optional)
-	if holdsWhen, ok := phrase["holds-when"]; ok {
-		// Make sure holds-when is an array
-		if _, ok := holdsWhen.([]interface{}); !ok {
-			return nil, errors.New("holds-when should be an array")
-		}
-
-		for _, value := range holdsWhen.([]interface{}) {
-			expression, err := parseExpression(value)
-
-			// TODO: Check that the expression is a boolean operator
-			// For now, just check that it's an operator
-			if err != nil {
-				return nil, err
-			} else if _, ok := expression.(Operator); !ok {
-				return nil, errors.New("holds-when can only contain operators")
-			}
-
-			fact.HoldsWhen = append(fact.HoldsWhen, expression)
-		}
-	}
-
-	// Fact has a conditioned-by field (optional)
-	if conditionedBy, ok := phrase["conditioned-by"]; ok {
-		// Make sure conditioned-by is an array
-		if _, ok := conditionedBy.([]interface{}); !ok {
-			return nil, errors.New("conditioned-by should be an array")
-		}
-
-		for _, value := range conditionedBy.([]interface{}) {
-			expression, err := parseExpression(value)
-
-			// TODO: Check that the expression is a boolean operator
-			// For now, just check that it's an operator
-			if err != nil {
-				return nil, err
-			} else if _, ok := expression.(Operator); !ok {
-				return nil, errors.New("conditioned-by can only contain operators")
-			}
-
-			fact.ConditionedBy = append(fact.ConditionedBy, expression)
-		}
-	} else {
-		fact.ConditionedBy = []interface{}{}
-	}
-
-	return fact, nil
-}
-
-func parseName(phrase map[string]interface{}) (interface{}, error) {
-	// Ensure that the phrase contains a name
-	if name, ok := phrase["name"]; ok {
-		return parseExpression(name)
-	} else {
-		return nil, errors.New("name is required")
-	}
-}
-
-//func parseIdentifiedBy(phrase map[string]interface{}) (interface{}, error) {
-//	// Check if the phrase has an identified-by field
-//	if identifiedBy, ok := phrase["identified-by"]; ok {
-//		// Make sure identified-by is an array
-//		if _, ok := identifiedBy.([]interface{}); !ok {
-//			return nil, errors.New("identified-by should be an array")
-//		}
-//
-//		for _, value := range identifiedBy.([]interface{}) {
-//			expression, err := parseExpression(value)
-//
-//			if err != nil {
-//				return nil, err
-//			}
-//
-//		}
-//	}
-//}
-
-func parseExpression(expression interface{}) (interface{}, error) {
-	// Primitives and references can only occur in Operands
-
-	// Check if the expression is a primitive
-	switch expression.(type) {
-	case string:
-		return Primitive{Value: expression.(string)}, nil
-	case bool:
-		return Primitive{Value: expression.(bool)}, nil
-	case float64:
-		// Check if the float is an integer
-		if expression != float64(int64(expression.(float64))) {
-			return nil, errors.New("floats are not supported")
-		}
-
-		return Primitive{Value: int64(expression.(float64))}, nil
-	case []string:
-		{
-			if len(expression.([]string)) != 1 {
-				return nil, errors.New("string reference can only contain one value")
-			}
-
-			return VariableReference{Value: expression.([]string)[0]}, nil
-		}
-	case []int:
-		{
-			if len(expression.([]int)) != 1 {
-				return nil, errors.New("integer reference can only contain one value")
-			}
-
-			return VariableReference{Value: expression.([]int)[0]}, nil
-		}
-	case []bool:
-		{
-			if len(expression.([]bool)) != 1 {
-				return nil, errors.New("boolean reference can only contain one value")
-			}
-
-			return VariableReference{Value: expression.([]bool)[0]}, nil
-		}
-	case map[string]interface{}:
-		break
-	default:
-		return nil, errors.New("unknown expression type")
-	}
-
-	expressionMap := expression.(map[string]interface{})
-
-	// Check if the expression is a constructor application
-	// It is one if it contains an "identifier" field
-	identifier, err := mapParseField(expressionMap, "identifier", stringType, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	if identifier != nil {
-		operands, err := mapParseField(expressionMap, "operands", arrayType, true, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Parse the operands
-		parsedOperands, err := parseOperands(operands.([]interface{}))
-
-		if err != nil {
-			return nil, err
-		}
-
-		return ConstructorApplication{Identifier: identifier.(string), Operands: parsedOperands}, nil
-	}
-
-	// Check if the expression is an operator
-	operator, err := mapParseField(expressionMap, "operator", stringType, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	if operator != nil {
-		operands, err := mapParseField(expressionMap, "operands", arrayType, true, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Parse the operands
-		parsedOperands, err := parseOperands(operands.([]interface{}))
-
-		if err != nil {
-			return nil, err
-		}
-
-		return Operator{Operator: operator.(string), Operands: parsedOperands}, nil
-	}
-
-	// Check if the expression is an iterator
-	iterator, err := mapParseField(expressionMap, "iterator", stringType, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	if iterator != nil {
-		binds, err := mapParseField(expressionMap, "binds", arrayType, true, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		predicate, err := mapParseField(expressionMap, "predicate", nil, true, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Parse the predicate
-		parsedPredicate, err := parseExpression(predicate)
-
-		if err != nil {
-			return nil, err
-		}
-
-		return Iterator{Iterator: iterator.(string), Binds: binds.([]string), Predicate: parsedPredicate}, nil
-	}
-
-	return nil, errors.New("unknown expression type")
-}
-
-func parseOperands(expression []interface{}) ([]interface{}, error) {
-	operands := make([]interface{}, 0)
-
-	for _, operand := range expression {
-		newOperand, err := parseExpression(operand)
-
-		if err != nil {
-			return nil, err
-		}
-
-		operands = append(operands, newOperand)
-	}
-
-	return operands, nil
+	return fmt.Errorf("unknown primitive type")
 }
 
 // GenerateJSON generates JSON from the given struct
 // If it fails, it returns an error
 func GenerateJSON(output Output) ([]byte, error) {
-	// Filter out empty fields in the output.Phrases
+	if len(globalErrors) > 0 {
+		output.Success = false
+		output.Errors = globalErrors
+	} else {
+		output.Results = globalResults
+	}
 
 	result, err := json.Marshal(output)
 	if err != nil {
