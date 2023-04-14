@@ -14,3 +14,7 @@ var stringType = reflect.TypeOf("")
 var boolType = reflect.TypeOf(true)
 var arrayType = reflect.TypeOf([]interface{}{})
 var objectType = reflect.TypeOf(map[string]interface{}{})
+
+var globalState = make(map[string]interface{})
+var globalResults = make([]Result, 0)
+var globalErrors = make([]Error, 0)

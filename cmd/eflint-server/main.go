@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
 	"log"
 	"net/http"
@@ -8,37 +9,43 @@ import (
 
 // handler for the root path
 func handler(w http.ResponseWriter, r *http.Request) {
-	// Try to parse the request body as JSON into the Input struct
-	// If it fails, return a 400 Bad Request
-	// If it succeeds, return a 200 OK
-	input, err := eflint.ParseInput(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	var input eflint.Input
+	err := json.NewDecoder(r.Body).Decode(&input)
+
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		output, err := eflint.GenerateJSON(eflint.Output{Success: false})
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(output)
 		return
 	}
 
 	// TODO: Do something with the input
 	switch input.Kind {
 	case "phrases":
+		eflint.InterpretPhrases(input.Phrases)
 	case "handshake":
 	case "ping":
 		break
 	default:
+		// TODO: This should have been handled by a typecheck function
 		http.Error(w, "Unknown kind", http.StatusBadRequest)
 		return
 	}
 
-	log.Println("Received request:", input)
-
 	// Write the response
-	output, err := eflint.GenerateJSON(eflint.Output{true, []interface{}{input.Phrases}})
+	output, err := eflint.GenerateJSON(eflint.Output{Success: true})
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.Write(output)
 
 	return
