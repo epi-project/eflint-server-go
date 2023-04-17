@@ -10,7 +10,7 @@ import (
 func InterpretPhrases(phrases []Phrase) {
 	// Clean the global result and error state
 	globalErrors = make([]Error, 0)
-	globalResults = make([]Result, 0)
+	globalResults = make([]interface{}, 0)
 
 	// Initialise the global state if it is empty
 	// TODO: This distinction is helpful for derivations, as you can
@@ -79,6 +79,13 @@ func handleAtomicFact(fact Phrase) error {
 	// Initialise instances and non-instances for the atomic fact
 	globalState["instances"][afact.Name] = make([]interface{}, 0)
 	globalState["non-instances"][afact.Name] = make([]interface{}, 0)
+	globalResults = append(globalResults, StateChanges{
+		Success:    true,
+		Changes:    []Phrase{fact},
+		Triggers:   nil,
+		Violated:   false,
+		Violations: nil,
+	})
 
 	return nil
 }
@@ -100,6 +107,13 @@ func handleCompositeFact(fact Phrase) error {
 	// Initialise instances and non-instances for the composite fact
 	globalState["instances"][cfact.Name] = make([]interface{}, 0)
 	globalState["non-instances"][cfact.Name] = make([]interface{}, 0)
+	globalResults = append(globalResults, StateChanges{
+		Success:    true,
+		Changes:    []Phrase{fact},
+		Triggers:   nil,
+		Violated:   false,
+		Violations: nil,
+	})
 
 	return nil
 }
@@ -175,6 +189,13 @@ func handleCreate(operand Expression) error {
 
 	// Add the instance to the global state
 	globalState["instances"][operand.Identifier] = append(globalState["instances"][operand.Identifier].([]interface{}), operand.Operands[0].Value.(string))
+	globalResults = append(globalResults, StateChanges{
+		Success:    true,
+		Changes:    []Phrase{{Kind: "create", Operand: &operand}},
+		Triggers:   nil,
+		Violated:   false,
+		Violations: nil,
+	})
 
 	return nil
 }
@@ -298,26 +319,35 @@ func handleQuery(expression Expression) error {
 
 	if _, ok := globalState["instances"][expression.Identifier]; !ok {
 		// add to global results
-		globalResults = append(globalResults, Result{
+		globalResults = append(globalResults, BQueryResult{
 			Success: false,
+			Errors: []Error{
+				{
+					Id:      "undeclared-type",
+					Message: "Undeclared type or placeholder: " + expression.Identifier,
+				},
+			},
 		})
+
 		return nil
+	}
+
+	result := BQueryResult{
+		Success: true,
+		Errors:  nil,
+		Result:  false,
 	}
 
 	for _, instance := range globalState["instances"][expression.Identifier].([]interface{}) {
 		if instance == expression.Operands[0].Value.(string) {
 			// add to global results
-			globalResults = append(globalResults, Result{
-				Success: true,
-			})
-			return nil
+			result.Result = true
+			break
 		}
 	}
 
 	// add to global results
-	globalResults = append(globalResults, Result{
-		Success: false,
-	})
+	globalResults = append(globalResults, result)
 
 	return nil
 }

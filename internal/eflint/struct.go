@@ -182,10 +182,10 @@ type Violation struct {
 }
 
 type Output struct {
-	Success bool     `json:"success"`
-	Errors  []Error  `json:"errors,omitempty"`
-	Results []Result `json:"results,omitempty"`
-	Phrases []Phrase `json:"phrases,omitempty"`
+	Success bool          `json:"success"`
+	Errors  []Error       `json:"errors,omitempty"`
+	Results []interface{} `json:"results,omitempty"`
+	Phrases []Phrase      `json:"phrases,omitempty"`
 }
 
 type Error struct {
@@ -206,6 +206,7 @@ type IQueryResult struct {
 }
 
 type StateChanges struct {
+	Success    bool        `json:"success"`
 	Changes    []Phrase    `json:"changes,omitempty"`
 	Triggers   []Trigger   `json:"triggers,omitempty"`
 	Violated   bool        `json:"violated"`

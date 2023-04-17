@@ -21,6 +21,6 @@ var objectType = reflect.TypeOf(map[string]interface{}{})
 //       and running those at the start of every request.
 var globalState = make(map[string]map[string]interface{})
 
-//var localState = make(map[string]interface{})
-var globalResults = make([]Result, 0)
+var localState = make(map[string]interface{})
+var globalResults = make([]interface{}, 0)
 var globalErrors = make([]Error, 0)
