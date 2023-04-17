@@ -45,7 +45,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write the response
-	output, err := eflint.GenerateJSON(eflint.Output{Success: true})
+	output, err := eflint.GenerateJSON(eflint.Output{Success: true, Phrases: input.Phrases})
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

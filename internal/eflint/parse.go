@@ -233,6 +233,19 @@ func GenerateHandshake() ([]byte, error) {
 	})
 }
 
+func (e Expression) MarshalJSON() ([]byte, error) {
+	if e.Value != nil {
+		return json.Marshal(e.Value)
+	}
+
+	type Alias Expression
+	return json.Marshal(&struct {
+		*Alias
+	}{
+		Alias: (*Alias)(&e),
+	})
+}
+
 // GenerateJSON generates JSON from the given struct
 // If it fails, it returns an error
 func GenerateJSON(output Output) ([]byte, error) {
