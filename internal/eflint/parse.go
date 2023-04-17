@@ -3,7 +3,6 @@ package eflint
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 )
 
 func (i *Input) UnmarshalJSON(data []byte) error {
@@ -172,7 +171,6 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 }
 
 func (e *Expression) UnmarshalJSON(data []byte) error {
-	log.Println("Unmarshalling expression", string(data))
 	var Primitive Primitive
 	if err := json.Unmarshal(data, &Primitive); err == nil {
 		e.Value = Primitive.Value
@@ -198,8 +196,6 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 }
 
 func (p *Primitive) UnmarshalJSON(data []byte) error {
-	log.Println("Unmarshalling primitive", string(data))
-
 	var String string
 	if err := json.Unmarshal(data, &String); err == nil {
 		p.Value = String
@@ -223,6 +219,18 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 	}
 
 	return fmt.Errorf("unknown primitive type")
+}
+
+func GenerateHandshake() ([]byte, error) {
+	return json.Marshal(Handshake{
+		Success:           true,
+		SupportedVersions: SupportedVersions,
+		Reasoner:          Reasoner,
+		ReasonerVersion:   ReasonerVersion,
+		SharesUpdates:     true,
+		SharesTriggers:    true,
+		SharesViolations:  false,
+	})
 }
 
 // GenerateJSON generates JSON from the given struct

@@ -220,9 +220,9 @@ type Result struct {
 type Handshake struct {
 	Success           bool     `json:"success"`
 	SupportedVersions []string `json:"supported_versions"`
-	Reasoner          string   `json:"reasoner,omitempty"`
-	ReasonerVersion   string   `json:"reasoner_version,omitempty"`
-	SharesUpdates     bool     `json:"shares_updates,omitempty"`
-	SharesTriggers    bool     `json:"shares_triggers,omitempty"`
-	SharesViolations  bool     `json:"shares_violations,omitempty"`
+	Reasoner          string   `json:"reasoner"`
+	ReasonerVersion   string   `json:"reasoner_version"`
+	SharesUpdates     bool     `json:"shares_updates"`
+	SharesTriggers    bool     `json:"shares_triggers"`
+	SharesViolations  bool     `json:"shares_violations"`
 }

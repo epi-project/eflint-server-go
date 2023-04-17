@@ -8,6 +8,18 @@ import (
 
 // InterpretPhrases interprets the given phrases and returns the results
 func InterpretPhrases(phrases []Phrase) {
+	// Clean the global result and error state
+	globalErrors = make([]Error, 0)
+	globalResults = make([]Result, 0)
+
+	// Initialise the global state if it is empty
+	if len(globalState) == 0 {
+		globalState = make(map[string]map[string]interface{})
+		globalState["facts"] = make(map[string]interface{})
+		globalState["instances"] = make(map[string]interface{})
+		globalState["non-instances"] = make(map[string]interface{})
+	}
+
 	for _, phrase := range phrases {
 		if err := InterpretPhrase(phrase); err != nil {
 			// TODO: Stop after first error? Or continue?
@@ -32,6 +44,10 @@ func InterpretPhrase(phrase Phrase) error {
 		err = handleCompositeFact(phrase)
 	case "create":
 		err = handleCreate(*phrase.Operand)
+	case "terminate":
+		err = handleTerminate(*phrase.Operand)
+	case "obfuscate":
+		err = handleObfuscate(*phrase.Operand)
 	case "bquery":
 		fallthrough
 	case "iquery":
@@ -56,11 +72,11 @@ func handleAtomicFact(fact Phrase) error {
 		ConditionedBy: fact.ConditionedBy,
 	}
 
-	if _, ok := globalState["fact"]; !ok {
-		globalState["fact"] = []interface{}{afact}
-	} else {
-		globalState["fact"] = append(globalState["fact"].([]interface{}), afact)
-	}
+	globalState["facts"][afact.Name] = afact
+
+	// Initialise instances and non-instances for the atomic fact
+	globalState["instances"][afact.Name] = make([]interface{}, 0)
+	globalState["non-instances"][afact.Name] = make([]interface{}, 0)
 
 	return nil
 }
@@ -77,15 +93,38 @@ func handleCompositeFact(fact Phrase) error {
 		ConditionedBy: fact.ConditionedBy,
 	}
 
-	if _, ok := globalState["fact"]; !ok {
-		globalState["fact"] = []interface{}{cfact}
-	} else {
-		globalState["fact"] = append(globalState["fact"].([]interface{}), cfact)
-	}
+	globalState["facts"][cfact.Name] = cfact
+
+	// Initialise instances and non-instances for the composite fact
+	globalState["instances"][cfact.Name] = make([]interface{}, 0)
+	globalState["non-instances"][cfact.Name] = make([]interface{}, 0)
 
 	return nil
 }
 
+func checkRange(value interface{}, fact interface{}) bool {
+	// First check if the fact is an atomic fact
+	if _, ok := fact.(AtomicFact); !ok {
+		// Composite facts do not have a range
+		return true
+	}
+
+	if fact.(AtomicFact).Range == nil {
+		return true
+	}
+
+	// Check if the value is in the range
+	for _, expr := range fact.(AtomicFact).Range {
+		if value == expr.Value {
+			return true
+		}
+	}
+
+	return false
+}
+
+// handleCreate explicitly sets a given expression to true,
+// by moving it from the non-instances to the instances list.
 func handleCreate(operand Expression) error {
 	// Get rid of stuff that is not yet supported
 	if operand.Identifier == "" {
@@ -100,17 +139,10 @@ func handleCreate(operand Expression) error {
 
 	// Make sure the fact exists
 	found := false
-	facts := globalState["fact"].([]interface{})
-	for _, fact := range facts {
-		switch fact.(type) {
-		case AtomicFact:
-			if fact.(AtomicFact).Name == operand.Identifier {
-				found = true
-			}
-		case CompositeFact:
-			if fact.(CompositeFact).Name == operand.Identifier {
-				found = true
-			}
+	for factname := range globalState["facts"] {
+		if factname == operand.Identifier {
+			found = true
+			break
 		}
 	}
 
@@ -118,14 +150,136 @@ func handleCreate(operand Expression) error {
 		return fmt.Errorf("fact %s not found", operand.Identifier)
 	}
 
-	if _, ok := globalState[operand.Identifier]; !ok {
-		globalState[operand.Identifier] = []interface{}{operand.Operands[0].Value.(string)}
-	} else {
-		globalState[operand.Identifier] = append(globalState[operand.Identifier].([]interface{}), operand.Operands[0].Value.(string))
+	if !checkRange(operand.Operands[0].Value, globalState["facts"][operand.Identifier]) {
+		return fmt.Errorf("value %s not in range of fact %s", operand.Operands[0].Value, operand.Identifier)
+	}
+
+	// If there is a non-instance for this expression, remove it
+	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
+		for i, noninstance := range noninstances.([]interface{}) {
+			if noninstance == operand.Operands[0].Value.(string) {
+				// Remove the non-instance
+				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+			}
+		}
+	}
+
+	// Loop through the instances and make sure the instance does not already exist
+	for _, instance := range globalState["instances"][operand.Identifier].([]interface{}) {
+		if instance == operand.Operands[0].Value.(string) {
+			return fmt.Errorf("instance %s already exists", operand.Operands[0].Value.(string))
+		}
+	}
+
+	// Add the instance to the global state
+	globalState["instances"][operand.Identifier] = append(globalState["instances"][operand.Identifier].([]interface{}), operand.Operands[0].Value.(string))
+
+	return nil
+}
+
+// handleTerminate explicitly sets a given expression to false,
+// by moving it from the instances to the non-instances
+// list.
+func handleTerminate(operand Expression) error {
+	// Get rid of stuff that is not yet supported
+	if operand.Identifier == "" {
+		return nil
+	}
+	if len(operand.Operands) != 1 {
+		return nil
+	}
+	if _, ok := operand.Operands[0].Value.(string); !ok {
+		return nil
+	}
+
+	// Make sure the fact exists
+	found := false
+	facts := globalState["facts"]
+	for factname := range facts {
+		if factname == operand.Identifier {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("fact %s not found", operand.Identifier)
+	}
+
+	if !checkRange(operand.Operands[0].Value, globalState["facts"][operand.Identifier]) {
+		return fmt.Errorf("value %s not in range of fact %s", operand.Operands[0].Value, operand.Identifier)
+	}
+
+	// If there is an instance for this expression, remove it
+	if instances, ok := globalState["instances"][operand.Identifier]; ok {
+		for i, instance := range instances.([]interface{}) {
+			if instance == operand.Operands[0].Value.(string) {
+				// Remove the instance
+				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+			}
+		}
+	}
+
+	// Loop through the non-instances and make sure the expression does not already exist
+	for _, noninstance := range globalState["non-instances"][operand.Identifier].([]interface{}) {
+		if noninstance == operand.Operands[0].Value.(string) {
+			return fmt.Errorf("expression %s already exists", operand.Operands[0].Value.(string))
+		}
+	}
+
+	globalState["non-instances"][operand.Identifier] = append(globalState["non-instances"][operand.Identifier].([]interface{}), operand.Operands[0].Value.(string))
+
+	return nil
+}
+
+// handleObfuscate implicitly sets a given expression to false,
+// by removing it from both the instances and non-instances list.
+func handleObfuscate(operand Expression) error {
+	// Get rid of stuff that is not yet supported
+	if operand.Identifier == "" {
+		return nil
+	}
+	if len(operand.Operands) != 1 {
+		return nil
+	}
+	if _, ok := operand.Operands[0].Value.(string); !ok {
+		return nil
+	}
+
+	// Make sure the fact exists
+	found := false
+	for factname := range globalState["facts"] {
+		if factname == operand.Identifier {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("fact %s not found", operand.Identifier)
+	}
+
+	// If there is an instance for this expression, remove it
+	if instances, ok := globalState["instances"][operand.Identifier]; ok {
+		for i, instance := range instances.([]interface{}) {
+			if instance == operand.Operands[0].Value.(string) {
+				// Remove the instance
+				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+			}
+		}
+	}
+
+	// If there is a non-instance for this expression, remove it
+	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
+		for i, noninstance := range noninstances.([]interface{}) {
+			if noninstance == operand.Operands[0].Value.(string) {
+				// Remove the non-instance
+				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+			}
+		}
 	}
 
 	return nil
-
 }
 
 func handleQuery(expression Expression) error {
@@ -140,7 +294,15 @@ func handleQuery(expression Expression) error {
 		return nil
 	}
 
-	for _, instance := range globalState[expression.Identifier].([]interface{}) {
+	if _, ok := globalState["instances"][expression.Identifier]; !ok {
+		// add to global results
+		globalResults = append(globalResults, Result{
+			Success: false,
+		})
+		return nil
+	}
+
+	for _, instance := range globalState["instances"][expression.Identifier].([]interface{}) {
 		if instance == expression.Operands[0].Value.(string) {
 			// add to global results
 			globalResults = append(globalResults, Result{

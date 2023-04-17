@@ -30,8 +30,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	case "phrases":
 		eflint.InterpretPhrases(input.Phrases)
 	case "handshake":
+		handshake, err := eflint.GenerateHandshake()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(handshake)
+		return
 	case "ping":
-		break
 	default:
 		// TODO: This should have been handled by a typecheck function
 		http.Error(w, "Unknown kind", http.StatusBadRequest)
