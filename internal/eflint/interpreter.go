@@ -13,6 +13,9 @@ func InterpretPhrases(phrases []Phrase) {
 	globalResults = make([]Result, 0)
 
 	// Initialise the global state if it is empty
+	// TODO: This distinction is helpful for derivations, as you can
+	//       then ignore non-instances of a fact when deriving. This
+	//       way, only "unknown" facts are derived.
 	if len(globalState) == 0 {
 		globalState = make(map[string]map[string]interface{})
 		globalState["facts"] = make(map[string]interface{})
@@ -38,7 +41,6 @@ func InterpretPhrase(phrase Phrase) error {
 
 	switch phrase.Kind {
 	case "afact":
-		// TODO: Need to keep a global state that is accessible. Maybe a global interface{} array?
 		err = handleAtomicFact(phrase)
 	case "cfact":
 		err = handleCompositeFact(phrase)
@@ -316,5 +318,73 @@ func handleQuery(expression Expression) error {
 	globalResults = append(globalResults, Result{
 		Success: false,
 	})
+
 	return nil
+}
+
+func handleExpression(expression Expression) bool {
+	succeeded := false
+
+	if expression.Operator != "" {
+		return handleOperator(expression)
+	}
+
+	return succeeded
+}
+
+func handleOperator(expression Expression) bool {
+	switch expression.Operator {
+	// Logical operators
+	case "AND":
+		return handleAnd(expression.Operands)
+	case "OR":
+		return handleOr(expression.Operands)
+	case "NOT":
+		return handleNot(expression.Operands)
+
+	// Comparison operators
+	case "EQ":
+		return handleEQ(expression.Operands)
+	case "NE":
+		return !handleEQ(expression.Operands)
+	case "GT":
+		return handleGT(expression.Operands)
+	}
+
+	return false
+}
+
+// TODO: This is short-circuiting, need to check if this is correct
+func handleAnd(operands []Expression) bool {
+	for _, operand := range operands {
+		if !handleExpression(operand) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// TODO: This is short-circuiting, need to check if this is correct
+func handleOr(operands []Expression) bool {
+	for _, operand := range operands {
+		if handleExpression(operand) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func handleNot(operands []Expression) bool {
+	return !handleExpression(operands[0])
+}
+
+func handleEQ(operands []Expression) bool {
+	return handleExpression(operands[0]) == handleExpression(operands[1])
+}
+
+func handleGT(operands []Expression) bool {
+	// TODO: handleExpression can also return a String / Int
+	return false
 }

@@ -226,3 +226,7 @@ type Handshake struct {
 	SharesTriggers    bool     `json:"shares_triggers"`
 	SharesViolations  bool     `json:"shares_violations"`
 }
+
+type Value interface {
+	int64 | string
+}
