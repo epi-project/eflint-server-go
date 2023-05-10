@@ -13,7 +13,25 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	var input eflint.Input
 	err := json.NewDecoder(r.Body).Decode(&input)
 
+	// Check for parsing errors
 	if err != nil {
+		log.Println(err)
+		output, err := eflint.GenerateJSON(eflint.Output{Success: false})
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(output)
+		return
+	}
+
+	err = eflint.Typecheck(input)
+
+	// Check for typechecking errors
+	if err != nil {
+		log.Println(err)
 		output, err := eflint.GenerateJSON(eflint.Output{Success: false})
 
 		if err != nil {
@@ -54,6 +72,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
+	//log.Println("Handled request")
 
 	return
 }

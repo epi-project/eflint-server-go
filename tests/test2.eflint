@@ -1,0 +1,27 @@
+Fact x Identified by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+    Derived from 1, 2, 3
+    Derived from 4
+    Holds when 5
+    Conditioned by 8
+    Holds when 10
+    Conditioned by 6
+
+Placeholder y For x
+
+Predicate yes When x(1)
+
+Event fire Related to y
+    Holds when 7
+    Conditioned by 9
+    Creates 10
+    Obfuscates 6
+
+Act change-vote
+    Actor voter
+    Related to candidate, candidate
+    Holds when voter
+    Creates has-voted(voter, candidate)
+    Terminates has-voted(voter, candidate)
+
+?x(1)
+?-x
