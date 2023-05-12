@@ -10,6 +10,7 @@ const SharesUpdates = true
 const SharesTriggers = true
 const SharesViolations = false
 
+var intType = reflect.TypeOf(int64(0))
 var stringType = reflect.TypeOf("")
 var boolType = reflect.TypeOf(true)
 var arrayType = reflect.TypeOf([]interface{}{})

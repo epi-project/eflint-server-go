@@ -1,7 +1,5 @@
 package eflint
 
-import "log"
-
 func DeriveFacts() {
 	changed := true
 
@@ -25,18 +23,18 @@ func deriveFact(fact interface{}) bool {
 
 	if afact, ok := fact.(AtomicFact); ok {
 		for _, derivation := range afact.DerivedFrom {
-			log.Println("Deriving fact", afact.Name, "from", derivation)
+			//log.Println("Deriving fact", afact.Name, "from", derivation)
 			for instance := range handleExpression(derivation) {
-				log.Println("Deriving fact", afact.Name, "from", derivation, "with instance", instance)
+				//log.Println("Deriving fact", afact.Name, "from", derivation, "with instance", instance)
 				err := handleCreate(Expression{
 					Identifier: afact.Name,
 					Operands: []Expression{
-						{
-							Identifier: instance.Identifier,
-							Operands:   instance.Operands,
-						},
+						instance,
 					},
 				})
+				//if err != nil {
+				//	log.Println(err)
+				//}
 				changed = changed || (err == nil)
 			}
 		}

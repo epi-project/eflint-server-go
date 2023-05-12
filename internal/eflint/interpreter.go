@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"reflect"
 	"strconv"
 )
 
@@ -36,7 +37,6 @@ func InterpretPhrases(phrases []Phrase) {
 		if err := InterpretPhrase(phrase); err != nil {
 			// TODO: Stop after first error? Or continue?
 			log.Println(err)
-			break
 		}
 	}
 
@@ -164,34 +164,17 @@ func factExists(identifier string) bool {
 	return false
 }
 
-func checkConversion(operand Expression, fact interface{}) Expression {
-	if operand.Value != nil {
-		// Nothing to convert
-		return operand
+func formatValue(v interface{}) string {
+	switch v.(type) {
+	case string:
+		return fmt.Sprintf("\"%s\"", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	default:
+		return fmt.Sprintf("%v", v)
 	}
-
-	if operand.Identifier == "" || operand.Operands == nil {
-		return operand
-	}
-
-	if !factExists(operand.Identifier) {
-		return operand
-	}
-
-	fromFact := globalState["facts"][operand.Identifier]
-
-	if afactTo, ok := fact.(AtomicFact); ok {
-		if afactFrom, ok := fromFact.(AtomicFact); ok {
-			if afactTo.Type == afactFrom.Type {
-				return Expression{
-					Identifier: operand.Identifier,
-					Operands:   []Expression{operand.Operands[0]},
-				}
-			}
-		}
-	}
-
-	return operand
 }
 
 func canCreate(operand Expression) error {
@@ -205,63 +188,159 @@ func canCreate(operand Expression) error {
 	if _, ok := globalState["facts"][operand.Identifier].(AtomicFact); ok {
 		if !checkRange(operand.Operands[0].Value, globalState["facts"][operand.Identifier]) {
 			value := operand.Operands[0].Value
-			if _, ok := value.(string); ok {
-				value = fmt.Sprintf("\"%s\"", value)
-			} else if _, ok := value.(bool); ok {
-				value = fmt.Sprintf("%t", value)
-			} else if _, ok := value.(int64); ok {
-				value = fmt.Sprintf("%d", value)
-			}
-			return fmt.Errorf("value %s is not in the range of fact %s", value, operand.Identifier)
+			return fmt.Errorf("value %s is not in the range of fact %s", formatValue(value), operand.Identifier)
 		}
 	}
 
 	// If it is a composite fact, check if the values are of the correct type
 	// by checking if we can recursively create them.
+	if _, ok := globalState["facts"][operand.Identifier].(CompositeFact); ok {
+		for _, expr := range operand.Operands {
+			err := canCreate(expr)
+			if err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
+}
+
+func convertAtomic(operand Expression, target string) Expression {
+	if operand.Value != nil {
+		// Primitive value, check if we can convert it
+		if reflect.TypeOf(operand.Value) == intType && target == "Int" {
+			return operand
+		} else if reflect.TypeOf(operand.Value) == stringType && target == "String" {
+			return operand
+		} else {
+			// Try to convert the value
+			if !factExists(target) {
+				panic("Conversion target does not exist")
+			}
+			if afact, ok := globalState["facts"][target].(AtomicFact); ok {
+				new_operand := convertAtomic(operand, afact.Type)
+				if new_operand.Value != nil {
+					return Expression{
+						Identifier: target,
+						Operands: []Expression{
+							new_operand,
+						},
+					}
+				}
+			}
+
+			panic("Cannot convert primitive value to composite fact")
+		}
+	} else if operand.Identifier != "" {
+		if !factExists(operand.Identifier) {
+			panic("Fact does not exist")
+		}
+
+		if afact, ok := globalState["facts"][operand.Identifier].(AtomicFact); ok {
+			if afact.Type == target {
+				return convertAtomic(operand.Operands[0], target)
+			} else if afact.Name == target {
+				return operand
+			} else {
+				panic("Don't know how to convert " + afact.Type + " to " + target)
+			}
+		} else {
+			panic("Cannot convert composite fact to atomic fact")
+		}
+	} else {
+		panic("Unknown error in convertAtomic")
+	}
+}
+
+func convertComposite(operands []Expression, targets []string) []Expression {
+	for i := range operands {
+		// Find target[i] in the global state
+		if !factExists(targets[i]) {
+			panic("Fact does not exist")
+		}
+		if _, ok := globalState["facts"][targets[i]].(AtomicFact); ok {
+			operands[i] = convertAtomic(operands[i], targets[i])
+		} else {
+			operands[i].Operands = convertComposite(operands[i].Operands, globalState["facts"][targets[i]].(CompositeFact).IdentifiedBy)
+		}
+	}
+
+	return operands
+}
+
+func equalInstances(instance1 Expression, instance2 Expression) bool {
+	if instance1.Value != nil {
+		return instance1.Value == instance2.Value
+	}
+
+	if instance1.Identifier != instance2.Identifier {
+		return false
+	}
+
+	if len(instance1.Operands) != len(instance2.Operands) {
+		return false
+	}
+
+	for i := range instance1.Operands {
+		if !equalInstances(instance1.Operands[i], instance2.Operands[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func convertInstance(operand Expression) (Expression, error) {
+	if !factExists(operand.Identifier) {
+		return operand, fmt.Errorf("fact %s does not exist", operand.Identifier)
+	}
+
+	fact := globalState["facts"][operand.Identifier]
+	if afact, ok := fact.(AtomicFact); ok {
+		if len(operand.Operands) != 1 {
+			return operand, fmt.Errorf("atomic fact operands mismatch")
+		}
+
+		operand.Operands[0] = convertAtomic(operand.Operands[0], afact.Type)
+
+	} else if cfact, ok := fact.(CompositeFact); ok {
+		if len(operand.Operands) != len(cfact.IdentifiedBy) {
+			return operand, fmt.Errorf("composite fact operands mismatch")
+		}
+		operand.Operands = convertComposite(operand.Operands, cfact.IdentifiedBy)
+	}
+
+	return operand, canCreate(operand)
 }
 
 // handleCreate explicitly sets a given expression to true,
 // by moving it from the non-instances to the instances list.
 func handleCreate(operand Expression) error {
-	// Get rid of stuff that is not yet supported
-	if operand.Identifier == "" {
-		return fmt.Errorf("not implemented yet")
-	}
-	if len(operand.Operands) != 1 {
-		return fmt.Errorf("not implemented yet")
-	}
-	//if _, ok := operand.Operands[0].Value.(string); !ok {
-	//	return nil
-	//}
-
-	operand.Operands[0] = checkConversion(operand.Operands[0], globalState["facts"][operand.Identifier])
-
-	if err := canCreate(operand); err != nil {
-		// TODO: Do something with the error
+	operand, err := convertInstance(operand)
+	if err != nil {
 		return err
 	}
 
 	// If there is a non-instance for this expression, remove it
 	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
 		for i, noninstance := range noninstances.([]interface{}) {
-			if noninstance == operand.Operands[0].Value {
-				// Remove the non-instance
+			if equalInstances(noninstance.(Expression), operand) {
 				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+				break
 			}
 		}
 	}
 
 	// Loop through the instances and make sure the instance does not already exist
 	for _, instance := range globalState["instances"][operand.Identifier].([]interface{}) {
-		if instance == operand.Operands[0].Value {
-			return fmt.Errorf("instance %s already exists", operand.Operands[0].Value)
+		if equalInstances(instance.(Expression), operand) {
+			return fmt.Errorf("instance %s already exists", formatExpression(operand))
 		}
 	}
 
 	// Add the instance to the global state
-	globalState["instances"][operand.Identifier] = append(globalState["instances"][operand.Identifier].([]interface{}), operand.Operands[0].Value)
+	globalState["instances"][operand.Identifier] = append(globalState["instances"][operand.Identifier].([]interface{}), operand)
 	globalResults = append(globalResults, StateChanges{
 		Success:    true,
 		Changes:    []Phrase{{Kind: "create", Operand: &operand}},
@@ -270,17 +349,7 @@ func handleCreate(operand Expression) error {
 		Violations: nil,
 	})
 
-	fields := ""
-	if len(operand.Operands) > 0 {
-		value := operand.Operands[0].Value
-		if _, ok := value.(string); ok {
-			value = fmt.Sprintf("\"%s\"", value)
-		} else if _, ok := value.(int64); ok {
-			value = fmt.Sprintf("%d", value)
-		}
-		fields = "(" + value.(string) + ")"
-	}
-	log.Println("+" + operand.Identifier + fields)
+	log.Println("+" + formatExpression(operand))
 
 	return nil
 }
@@ -289,59 +358,39 @@ func handleCreate(operand Expression) error {
 // by moving it from the instances to the non-instances
 // list.
 func handleTerminate(operand Expression) error {
-	// Get rid of stuff that is not yet supported
-	if operand.Identifier == "" {
-		return nil
-	}
-	if len(operand.Operands) != 1 {
-		return nil
-	}
-	if _, ok := operand.Operands[0].Value.(string); !ok {
-		return nil
-	}
-
-	// Make sure the fact exists
-	found := false
-	facts := globalState["facts"]
-	for factname := range facts {
-		if factname == operand.Identifier {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("fact %s not found", operand.Identifier)
-	}
-
-	if !checkRange(operand.Operands[0].Value, globalState["facts"][operand.Identifier]) {
-		return fmt.Errorf("value %s not in range of fact %s", operand.Operands[0].Value, operand.Identifier)
+	operand, err := convertInstance(operand)
+	if err != nil {
+		return err
 	}
 
 	// If there is an instance for this expression, remove it
 	if instances, ok := globalState["instances"][operand.Identifier]; ok {
 		for i, instance := range instances.([]interface{}) {
-			if instance == operand.Operands[0].Value.(string) {
-				// Remove the instance
+			if equalInstances(instance.(Expression), operand) {
 				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+				break
 			}
 		}
 	}
 
-	// Loop through the non-instances and make sure the expression does not already exist
+	// Loop through the non-instances and make sure the non-instance does not already exist
 	for _, noninstance := range globalState["non-instances"][operand.Identifier].([]interface{}) {
-		if noninstance == operand.Operands[0].Value.(string) {
-			return fmt.Errorf("expression %s already exists", operand.Operands[0].Value.(string))
+		if equalInstances(noninstance.(Expression), operand) {
+			return fmt.Errorf("non-instance %s already exists", formatExpression(operand))
 		}
 	}
 
-	globalState["non-instances"][operand.Identifier] = append(globalState["non-instances"][operand.Identifier].([]interface{}), operand.Operands[0].Value.(string))
+	// Add the non-instance to the global state
+	globalState["non-instances"][operand.Identifier] = append(globalState["non-instances"][operand.Identifier].([]interface{}), operand)
+	globalResults = append(globalResults, StateChanges{
+		Success:    true,
+		Changes:    []Phrase{{Kind: "terminate", Operand: &operand}},
+		Triggers:   nil,
+		Violated:   false,
+		Violations: nil,
+	})
 
-	fields := ""
-	if len(operand.Operands) > 0 {
-		fields = "(" + operand.Operands[0].Value.(string) + ")"
-	}
-	log.Println("-" + operand.Identifier + fields)
+	log.Println("-" + formatExpression(operand))
 
 	return nil
 }
@@ -349,36 +398,17 @@ func handleTerminate(operand Expression) error {
 // handleObfuscate implicitly sets a given expression to false,
 // by removing it from both the instances and non-instances list.
 func handleObfuscate(operand Expression) error {
-	// Get rid of stuff that is not yet supported
-	if operand.Identifier == "" {
-		return nil
-	}
-	if len(operand.Operands) != 1 {
-		return nil
-	}
-	if _, ok := operand.Operands[0].Value.(string); !ok {
-		return nil
-	}
-
-	// Make sure the fact exists
-	found := false
-	for factname := range globalState["facts"] {
-		if factname == operand.Identifier {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("fact %s not found", operand.Identifier)
+	operand, err := convertInstance(operand)
+	if err != nil {
+		return err
 	}
 
 	// If there is an instance for this expression, remove it
 	if instances, ok := globalState["instances"][operand.Identifier]; ok {
 		for i, instance := range instances.([]interface{}) {
-			if instance == operand.Operands[0].Value.(string) {
-				// Remove the instance
+			if equalInstances(instance.(Expression), operand) {
 				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+				break
 			}
 		}
 	}
@@ -386,18 +416,22 @@ func handleObfuscate(operand Expression) error {
 	// If there is a non-instance for this expression, remove it
 	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
 		for i, noninstance := range noninstances.([]interface{}) {
-			if noninstance == operand.Operands[0].Value.(string) {
-				// Remove the non-instance
+			if equalInstances(noninstance.(Expression), operand) {
 				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+				break
 			}
 		}
 	}
 
-	fields := ""
-	if len(operand.Operands) > 0 {
-		fields = "(" + operand.Operands[0].Value.(string) + ")"
-	}
-	log.Println("x" + operand.Identifier + fields)
+	globalResults = append(globalResults, StateChanges{
+		Success:    true,
+		Changes:    []Phrase{{Kind: "obfuscate", Operand: &operand}},
+		Triggers:   nil,
+		Violated:   false,
+		Violations: nil,
+	})
+
+	log.Println("~" + formatExpression(operand))
 
 	return nil
 }
@@ -458,12 +492,12 @@ func isFiniteFact(factName string) bool {
 	if fact, ok := globalState["facts"][factName]; ok {
 		if afact, ok := fact.(AtomicFact); ok {
 			return len(afact.Range) > 0
-		} else if cfact, ok := fact.(CompositeFact); ok {
-			for _, param := range cfact.IdentifiedBy {
-				if !isFiniteFact(param) {
-					return false
-				}
-			}
+		} else if _, ok := fact.(CompositeFact); ok {
+			//for _, param := range cfact.IdentifiedBy {
+			//	if !isFiniteFact(param) {
+			//		return false
+			//	}
+			//}
 			return true
 		}
 	}
@@ -501,7 +535,7 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 					instances = append(instances, pInstances)
 				}
 
-				combinations := cartesianProduct2(instances...)
+				combinations := cartesianProduct(instances...)
 				for _, combination := range combinations {
 					result.Operands = make([]Expression, 0)
 					for _, param := range combination {
@@ -547,7 +581,7 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 	return c
 }
 
-func cartesianProduct2(params ...[]interface{}) (result [][]interface{}) {
+func cartesianProduct(params ...[]interface{}) (result [][]interface{}) {
 	c := 1
 	for _, param := range params {
 		c *= len(param)
@@ -582,19 +616,29 @@ func cartesianProduct2(params ...[]interface{}) (result [][]interface{}) {
 	return p
 }
 
-func cartesianProduct(params ...[]interface{}) (result [][]interface{}) {
-	if len(params) == 0 {
-		return [][]interface{}{nil}
-	}
-
-	remainder := cartesianProduct(params[1:]...)
-	for _, param := range params[0] {
-		for _, r := range remainder {
-			result = append(result, append([]interface{}{param}, r...))
+func formatExpression(expression Expression) string {
+	if expression.Value != nil {
+		return formatValue(expression.Value)
+	} else if expression.Identifier != "" {
+		result := expression.Identifier + "("
+		for i, operand := range expression.Operands {
+			if i > 0 {
+				result += ", "
+			}
+			result += formatExpression(operand)
 		}
+		result += ")"
+		return result
 	}
 
-	return
+	return ""
+}
+
+func printExpression(expression Expression, newline bool) {
+	fmt.Print(formatExpression(expression))
+	if newline {
+		fmt.Println()
+	}
 }
 
 func handleIQuery(expression Expression) error {
@@ -616,7 +660,11 @@ func handleIQuery(expression Expression) error {
 		}
 
 		for instance := range iterateFact(value) {
-			log.Println(instance)
+			printExpression(Expression{
+				Identifier: instance.Identifier,
+				Operands:   instance.Operands,
+			}, true)
+
 			result.Result = append(result.Result, Expression{
 				Identifier: instance.Identifier,
 				Operands:   instance.Operands,
@@ -626,14 +674,18 @@ func handleIQuery(expression Expression) error {
 		// add to global results
 		globalResults = append(globalResults, result)
 		//log.Printf("Got %d results\n", len(result.Result))
+	} else {
+		for instance := range handleExpression(expression) {
+			log.Println(instance)
+		}
 	}
 
 	return nil
 }
 
 // TODO: This can return any expression
-func handleExpression(expression Expression) <-chan ConstructorApplication {
-	c := make(chan ConstructorApplication)
+func handleExpression(expression Expression) <-chan Expression {
+	c := make(chan Expression)
 
 	if ref, ok := expression.Value.([]string); ok {
 		if len(ref) != 1 {
@@ -641,10 +693,92 @@ func handleExpression(expression Expression) <-chan ConstructorApplication {
 			return c
 		}
 
-		return iterateFact(ref[0])
+		go func() {
+			for instance := range iterateFact(ref[0]) {
+				c <- Expression{
+					Identifier: instance.Identifier,
+					Operands:   instance.Operands,
+				}
+			}
+			close(c)
+		}()
+	} else if val, ok := expression.Value.(int64); ok {
+		go func() {
+			c <- Expression{
+				Value: val,
+			}
+			close(c)
+		}()
+	} else if val, ok := expression.Value.(string); ok {
+		go func() {
+			c <- Expression{
+				Value: val,
+			}
+			close(c)
+		}()
+	} else if expression.Operator != "" {
+		go func() {
+			for operand := range handleOperator(expression) {
+				c <- operand
+			}
+			close(c)
+		}()
+	} else {
+		log.Println("Unknown expression type", expression)
+		close(c)
 	}
 
-	close(c)
+	return c
+}
+
+func handleArithmeticOperator(operator string, operand1 int64, operand2 int64) interface{} {
+	switch operator {
+	case "ADD":
+		return operand1 + operand2
+	case "SUB":
+		return operand1 - operand2
+	case "MUL":
+		return operand1 * operand2
+	case "DIV":
+		return operand1 / operand2
+	case "MOD":
+		return operand1 % operand2
+	default:
+		panic("Unknown operator")
+	}
+}
+
+func handleOperator(expression Expression) <-chan Expression {
+	c := make(chan Expression)
+
+	if expression.Operator == "ADD" || expression.Operator == "SUB" || expression.Operator == "MUL" || expression.Operator == "DIV" || expression.Operator == "MOD" {
+		go func() {
+			// TODO: Check if exactly two operands
+			expression1 := <-handleExpression(expression.Operands[0])
+			expression2 := <-handleExpression(expression.Operands[1])
+
+			if expression1.Value == nil || expression2.Value == nil {
+				panic("nil value")
+			}
+
+			if reflect.TypeOf(expression1.Value) != intType {
+				panic("Cannot convert to expression1 to int")
+			}
+
+			if reflect.TypeOf(expression2.Value) != intType {
+				panic("Cannot convert to expression2 to int")
+			}
+
+			c <- Expression{
+				Value: handleArithmeticOperator(expression.Operator, expression1.Value.(int64), expression2.Value.(int64)),
+			}
+
+			close(c)
+		}()
+	} else {
+		panic("Unknown operator")
+	}
+
 	return c
 }
 

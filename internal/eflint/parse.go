@@ -1,6 +1,7 @@
 package eflint
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -186,9 +187,18 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 	}
 
 	var ConstructorApplication ConstructorApplication
-	if err := json.Unmarshal(data, &ConstructorApplication); err == nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&ConstructorApplication); err == nil {
 		e.Identifier = ConstructorApplication.Identifier
 		e.Operands = ConstructorApplication.Operands
+		return nil
+	}
+
+	var Operator Operator
+	if err := json.Unmarshal(data, &Operator); err == nil {
+		e.Operator = Operator.Operator
+		e.Operands = Operator.Operands
 		return nil
 	}
 

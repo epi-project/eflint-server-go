@@ -40,6 +40,14 @@ var (
 		{`For`, `For`},
 		{`When`, `When`},
 
+		// Iterators
+		{`Count`, `Count`},
+		{`Sum`, `Sum`},
+		{`Max`, `Max`},
+		{`Min`, `Min`},
+
+		{`Not`, `Not`},
+
 		{`True`, `True`},
 		{`False`, `False`},
 		{`OR`, `\|\|`},
@@ -60,6 +68,8 @@ var (
 		{`Comma`, `,`},
 		{`Plus`, `\+`},
 		{`Star`, `\*`},
+		{`Div`, `/`},
+		{`Mod`, `%`},
 		{`Range`, `\.\.`},
 		{`LParen`, `\(`},
 		{`RParen`, `\)`},
@@ -70,7 +80,7 @@ var (
 		participle.Lexer(eflintLexer),
 		participle.Union[Phrase](Fact{}, Query{}, Statement{}, Placeholder{}, Predicate{}, Event{}, Act{}, Duty{}, Extend{}),
 		// TODO: Figure out how to deal with parentheses in expressions (e.g. "a && (b || c)").
-		participle.Union[Expression](String{}, Int{}, ConstructorApplication{}, Reference{}),
+		participle.Union[Expression](String{}, Int{}, ConstructorApplication{}, Reference{}, Arithmetic{}),
 		participle.Union[Range](String{}, Int{}),
 	)
 	version = "0.1.0"
@@ -207,6 +217,43 @@ type Expression interface {
 }
 
 type SubExpression struct {
+	Expression Expression `json:"expression" parser:"LParen @@ RParen"`
+}
+
+func (s SubExpression) expression() {}
+func (s SubExpression) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Expression)
+}
+
+type Arithmetic struct {
+	Left     Expression `json:"left"     parser:"@@"`
+	Operator string     `json:"operator" parser:"@(Div | Star | Create | Terminate)"`
+	Right    Expression `json:"right"    parser:"@@"`
+}
+
+func (a Arithmetic) expression() {}
+func (a Arithmetic) MarshalJSON() ([]byte, error) {
+	return json.Marshal(Operator{
+		Operator: a.Operator,
+		Operands: []Expression{a.Left, a.Right},
+	})
+}
+
+type Iterator struct { // TODO: Only a foreach can be inside an iterator
+	Operator string       `json:"operator" parser:"@(Count | Sum | Max | Min)"`
+	Operands []Expression `json:"operands" parser:"LParen @@ RParen"`
+}
+
+type Not struct {
+	Expression Expression `json:"expression" parser:"Not @@"`
+}
+
+func (n Not) expression() {}
+func (n Not) MarshalJSON() ([]byte, error) {
+	return json.Marshal(Operator{
+		Operator: "NOT",
+		Operands: []Expression{n.Expression},
+	})
 }
 
 type String struct {

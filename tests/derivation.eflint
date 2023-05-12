@@ -1,1 +1,8 @@
-Fact banaan Identified by String Derived from Kyrian
+Fact name
+Fact number Identified by 1..3
+Fact record Identified by name * number
+
++name(A)
++name(B)
++name(C)
+?-record

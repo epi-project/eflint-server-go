@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
+	"github.com/k0kubun/pp/v3"
 	"log"
 	"net/http"
 )
@@ -11,7 +12,9 @@ import (
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var input eflint.Input
-	err := json.NewDecoder(r.Body).Decode(&input)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(&input)
 
 	// Check for parsing errors
 	if err != nil {
@@ -42,6 +45,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.Write(output)
 		return
 	}
+
+	pp.Println(input)
 
 	// TODO: Do something with the input
 	switch input.Kind {

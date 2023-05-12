@@ -1,0 +1,8 @@
+Fact number Identified by 1..10
+
+Fact pair Identified by number * number
+
++number(1)
+-number(1)
++number(1)
+~number(1)
