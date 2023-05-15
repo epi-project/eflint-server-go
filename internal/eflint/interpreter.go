@@ -317,39 +317,46 @@ func convertInstance(operand Expression) (Expression, error) {
 // handleCreate explicitly sets a given expression to true,
 // by moving it from the non-instances to the instances list.
 func handleCreate(operand Expression) error {
-	operand, err := convertInstance(operand)
-	if err != nil {
-		return err
-	}
+	for op := range handleExpression(operand) {
+		if op.Identifier == "" {
+			log.Println("Skipping non-identifier expression", formatExpression(op))
+			continue
+		}
 
-	// If there is a non-instance for this expression, remove it
-	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
-		for i, noninstance := range noninstances.([]interface{}) {
-			if equalInstances(noninstance.(Expression), operand) {
-				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
-				break
+		op, err := convertInstance(op)
+		if err != nil {
+			return err
+		}
+
+		// If there is a non-instance for this expression, remove it
+		if noninstances, ok := globalState["non-instances"][op.Identifier]; ok {
+			for i, noninstance := range noninstances.([]interface{}) {
+				if equalInstances(noninstance.(Expression), op) {
+					globalState["non-instances"][op.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+					break
+				}
 			}
 		}
-	}
 
-	// Loop through the instances and make sure the instance does not already exist
-	for _, instance := range globalState["instances"][operand.Identifier].([]interface{}) {
-		if equalInstances(instance.(Expression), operand) {
-			return fmt.Errorf("instance %s already exists", formatExpression(operand))
+		// Loop through the instances and make sure the instance does not already exist
+		for _, instance := range globalState["instances"][op.Identifier].([]interface{}) {
+			if equalInstances(instance.(Expression), op) {
+				return fmt.Errorf("instance %s already exists", formatExpression(op))
+			}
 		}
+
+		// Add the instance to the global state
+		globalState["instances"][op.Identifier] = append(globalState["instances"][op.Identifier].([]interface{}), op)
+		globalResults = append(globalResults, StateChanges{
+			Success:    true,
+			Changes:    []Phrase{{Kind: "create", Operand: &op}},
+			Triggers:   nil,
+			Violated:   false,
+			Violations: nil,
+		})
+
+		log.Println("+" + formatExpression(op))
 	}
-
-	// Add the instance to the global state
-	globalState["instances"][operand.Identifier] = append(globalState["instances"][operand.Identifier].([]interface{}), operand)
-	globalResults = append(globalResults, StateChanges{
-		Success:    true,
-		Changes:    []Phrase{{Kind: "create", Operand: &operand}},
-		Triggers:   nil,
-		Violated:   false,
-		Violations: nil,
-	})
-
-	log.Println("+" + formatExpression(operand))
 
 	return nil
 }
@@ -358,39 +365,46 @@ func handleCreate(operand Expression) error {
 // by moving it from the instances to the non-instances
 // list.
 func handleTerminate(operand Expression) error {
-	operand, err := convertInstance(operand)
-	if err != nil {
-		return err
-	}
+	for op := range handleExpression(operand) {
+		if op.Identifier == "" {
+			log.Println("Skipping non-identifier expression", formatExpression(op))
+			continue
+		}
 
-	// If there is an instance for this expression, remove it
-	if instances, ok := globalState["instances"][operand.Identifier]; ok {
-		for i, instance := range instances.([]interface{}) {
-			if equalInstances(instance.(Expression), operand) {
-				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
-				break
+		op, err := convertInstance(op)
+		if err != nil {
+			return err
+		}
+
+		// If there is an instance for this expression, remove it
+		if instances, ok := globalState["instances"][op.Identifier]; ok {
+			for i, instance := range instances.([]interface{}) {
+				if equalInstances(instance.(Expression), op) {
+					globalState["instances"][op.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+					break
+				}
 			}
 		}
-	}
 
-	// Loop through the non-instances and make sure the non-instance does not already exist
-	for _, noninstance := range globalState["non-instances"][operand.Identifier].([]interface{}) {
-		if equalInstances(noninstance.(Expression), operand) {
-			return fmt.Errorf("non-instance %s already exists", formatExpression(operand))
+		// Loop through the non-instances and make sure the non-instance does not already exist
+		for _, noninstance := range globalState["non-instances"][op.Identifier].([]interface{}) {
+			if equalInstances(noninstance.(Expression), op) {
+				return fmt.Errorf("non-instance %s already exists", formatExpression(op))
+			}
 		}
+
+		// Add the non-instance to the global state
+		globalState["non-instances"][op.Identifier] = append(globalState["non-instances"][op.Identifier].([]interface{}), op)
+		globalResults = append(globalResults, StateChanges{
+			Success:    true,
+			Changes:    []Phrase{{Kind: "terminate", Operand: &op}},
+			Triggers:   nil,
+			Violated:   false,
+			Violations: nil,
+		})
+
+		log.Println("-" + formatExpression(op))
 	}
-
-	// Add the non-instance to the global state
-	globalState["non-instances"][operand.Identifier] = append(globalState["non-instances"][operand.Identifier].([]interface{}), operand)
-	globalResults = append(globalResults, StateChanges{
-		Success:    true,
-		Changes:    []Phrase{{Kind: "terminate", Operand: &operand}},
-		Triggers:   nil,
-		Violated:   false,
-		Violations: nil,
-	})
-
-	log.Println("-" + formatExpression(operand))
 
 	return nil
 }
@@ -398,40 +412,47 @@ func handleTerminate(operand Expression) error {
 // handleObfuscate implicitly sets a given expression to false,
 // by removing it from both the instances and non-instances list.
 func handleObfuscate(operand Expression) error {
-	operand, err := convertInstance(operand)
-	if err != nil {
-		return err
-	}
+	for op := range handleExpression(operand) {
+		if op.Identifier == "" {
+			log.Println("Skipping non-identifier expression", formatExpression(op))
+			continue
+		}
 
-	// If there is an instance for this expression, remove it
-	if instances, ok := globalState["instances"][operand.Identifier]; ok {
-		for i, instance := range instances.([]interface{}) {
-			if equalInstances(instance.(Expression), operand) {
-				globalState["instances"][operand.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
-				break
+		op, err := convertInstance(op)
+		if err != nil {
+			return err
+		}
+
+		// If there is an instance for this expression, remove it
+		if instances, ok := globalState["instances"][op.Identifier]; ok {
+			for i, instance := range instances.([]interface{}) {
+				if equalInstances(instance.(Expression), op) {
+					globalState["instances"][op.Identifier] = append(instances.([]interface{})[:i], instances.([]interface{})[i+1:]...)
+					break
+				}
 			}
 		}
-	}
 
-	// If there is a non-instance for this expression, remove it
-	if noninstances, ok := globalState["non-instances"][operand.Identifier]; ok {
-		for i, noninstance := range noninstances.([]interface{}) {
-			if equalInstances(noninstance.(Expression), operand) {
-				globalState["non-instances"][operand.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
-				break
+		// If there is a non-instance for this expression, remove it
+		if noninstances, ok := globalState["non-instances"][op.Identifier]; ok {
+			for i, noninstance := range noninstances.([]interface{}) {
+				if equalInstances(noninstance.(Expression), op) {
+					globalState["non-instances"][op.Identifier] = append(noninstances.([]interface{})[:i], noninstances.([]interface{})[i+1:]...)
+					break
+				}
 			}
 		}
+
+		globalResults = append(globalResults, StateChanges{
+			Success:    true,
+			Changes:    []Phrase{{Kind: "obfuscate", Operand: &op}},
+			Triggers:   nil,
+			Violated:   false,
+			Violations: nil,
+		})
+
+		log.Println("~" + formatExpression(op))
 	}
-
-	globalResults = append(globalResults, StateChanges{
-		Success:    true,
-		Changes:    []Phrase{{Kind: "obfuscate", Operand: &operand}},
-		Triggers:   nil,
-		Violated:   false,
-		Violations: nil,
-	})
-
-	log.Println("~" + formatExpression(operand))
 
 	return nil
 }
@@ -492,12 +513,12 @@ func isFiniteFact(factName string) bool {
 	if fact, ok := globalState["facts"][factName]; ok {
 		if afact, ok := fact.(AtomicFact); ok {
 			return len(afact.Range) > 0
-		} else if _, ok := fact.(CompositeFact); ok {
-			//for _, param := range cfact.IdentifiedBy {
-			//	if !isFiniteFact(param) {
-			//		return false
-			//	}
-			//}
+		} else if cfact, ok := fact.(CompositeFact); ok {
+			for _, param := range cfact.IdentifiedBy {
+				if !isFiniteFact(param) {
+					return false
+				}
+			}
 			return true
 		}
 	}
@@ -516,7 +537,6 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 
 	if isFiniteFact(factName) {
 		// Iterate over all possible instances for finite facts
-		//log.Println("finite fact")
 		go func() {
 			if fact, ok := globalState["facts"][factName].(AtomicFact); ok {
 				for _, instance := range fact.Range {
@@ -551,7 +571,6 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 		}()
 	} else {
 		// Iterate over all known instances for infinite facts
-		//log.Println("infinite fact")
 		go func() {
 			for _, instance := range globalState["instances"][factName].([]interface{}) {
 				switch instance.(type) {
@@ -561,18 +580,20 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 							Value: instance.(string),
 						},
 					}
+					c <- result
 				case int64:
 					result.Operands = []Expression{
 						{
 							Value: instance.(int64),
 						},
 					}
+					c <- result
 				case Expression:
-					result.Operands = []Expression{
-						instance.(Expression),
+					c <- ConstructorApplication{
+						Identifier: instance.(Expression).Identifier,
+						Operands:   instance.(Expression).Operands,
 					}
 				}
-				c <- result
 			}
 			close(c)
 		}()
@@ -642,6 +663,8 @@ func printExpression(expression Expression, newline bool) {
 }
 
 func handleIQuery(expression Expression) error {
+	log.Println("?-" + formatExpression(expression))
+
 	if reference, ok := expression.Value.([]string); ok {
 		if len(reference) != 1 {
 			return nil
@@ -676,7 +699,7 @@ func handleIQuery(expression Expression) error {
 		//log.Printf("Got %d results\n", len(result.Result))
 	} else {
 		for instance := range handleExpression(expression) {
-			log.Println(instance)
+			log.Println(formatExpression(instance))
 		}
 	}
 
@@ -686,6 +709,10 @@ func handleIQuery(expression Expression) error {
 // TODO: This can return any expression
 func handleExpression(expression Expression) <-chan Expression {
 	c := make(chan Expression)
+
+	if err := TypeCheckExpression(&expression); err != nil {
+		panic(err)
+	}
 
 	if ref, ok := expression.Value.([]string); ok {
 		if len(ref) != 1 {
@@ -721,6 +748,34 @@ func handleExpression(expression Expression) <-chan Expression {
 			for operand := range handleOperator(expression) {
 				c <- operand
 			}
+			close(c)
+		}()
+	} else if expression.Identifier != "" {
+		// TODO: Get all instances for the operands and return them
+		for _, operand := range expression.Operands {
+			if _, ok := operand.Value.([]string); ok {
+				if len(expression.Operands) == 1 {
+					go func() {
+						for op := range handleExpression(operand) {
+							c <- Expression{
+								Identifier: expression.Identifier,
+								Operands:   []Expression{op},
+							}
+						}
+						close(c)
+					}()
+
+					return c
+				} else {
+					log.Println(expression.Operands)
+					panic("References within expressions are not supported yet")
+				}
+			}
+		}
+
+		go func() {
+			// TODO: This is needed as we cannot always evaluate instances to true/false (citizen(Bob))
+			c <- expression
 			close(c)
 		}()
 	} else {

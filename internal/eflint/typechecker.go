@@ -187,3 +187,39 @@ func TypecheckDuty(phrase Phrase) error {
 func TypecheckExtend(phrase Phrase) error {
 	return nil
 }
+
+func TypeCheckExpressions(expressions *[]Expression) error {
+	for _, expression := range *expressions {
+		err := TypeCheckExpression(&expression)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func TypeCheckExpression(expression *Expression) error {
+	if len(expression.Operands) > 0 {
+		err := TypeCheckExpressions(&expression.Operands)
+		if err != nil {
+			return err
+		}
+	}
+
+	if expression.Identifier != "" && len(expression.Operands) == 0 {
+		if !factExists(expression.Identifier) {
+			panic("Fact does not exist in typecheck")
+		}
+
+		fact := globalState["facts"][expression.Identifier]
+
+		if cfact, ok := fact.(CompositeFact); ok {
+			for _, param := range cfact.IdentifiedBy {
+				expression.Operands = append(expression.Operands, Expression{Value: []string{param}})
+			}
+		}
+	}
+
+	return nil
+}

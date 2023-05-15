@@ -1,0 +1,9 @@
+Fact x Identified by Int
+Fact ten Identified by 1..10
+
+Fact number Identified by x
+
++x(ten)
+
+?-number
+?-number()
