@@ -706,12 +706,74 @@ func handleIQuery(expression Expression) error {
 	return nil
 }
 
+func findVariable(expression Expression) string {
+	if expression.Value != nil {
+		if ref, ok := expression.Value.([]string); ok {
+			if len(ref) == 1 {
+				return ref[0]
+			}
+		}
+	} else if expression.Identifier != "" || expression.Operator != "" {
+		for _, operand := range expression.Operands {
+			if variable := findVariable(operand); variable != "" {
+				return variable
+			}
+		}
+	}
+
+	return ""
+}
+
+func findOccurrences(expression *Expression, variable string) []*Expression {
+	if expression.Value != nil {
+		if ref, ok := expression.Value.([]string); ok {
+			if len(ref) == 1 && ref[0] == variable {
+				expression.Value = "TEST"
+				return []*Expression{expression}
+			}
+		}
+	} else if expression.Identifier != "" || expression.Operator != "" {
+		var result []*Expression
+		for _, operand := range expression.Operands {
+			result = append(result, findOccurrences(&operand, variable)...)
+		}
+		return result
+	}
+
+	return []*Expression{}
+}
+
 // TODO: This can return any expression
 func handleExpression(expression Expression) <-chan Expression {
 	c := make(chan Expression)
 
 	if err := TypeCheckExpression(&expression); err != nil {
 		panic(err)
+	}
+
+	// Check if there are any variables in the expression
+	ref := findVariable(expression)
+	if ref != "" {
+		// Find all occurrences of the variable
+		occurrences := findOccurrences(&expression, ref)
+
+		log.Println(occurrences, &expression)
+
+		// Iterate over all instances of the variable
+		for instance := range iterateFact(ref) {
+			log.Println("Found instance:", instance)
+
+			// Replace all occurrences of the variable with the instance
+			for _, occurrence := range occurrences {
+				log.Println("Replacing", occurrence, "with", instance)
+				//occurrence.Value = []string{"TEST"}
+				log.Println(occurrence)
+			}
+
+			log.Println("New expression:", expression)
+		}
+
+		return c
 	}
 
 	if ref, ok := expression.Value.([]string); ok {
@@ -752,26 +814,58 @@ func handleExpression(expression Expression) <-chan Expression {
 		}()
 	} else if expression.Identifier != "" {
 		// TODO: Get all instances for the operands and return them
-		for _, operand := range expression.Operands {
-			if _, ok := operand.Value.([]string); ok {
-				if len(expression.Operands) == 1 {
-					go func() {
-						for op := range handleExpression(operand) {
-							c <- Expression{
-								Identifier: expression.Identifier,
-								Operands:   []Expression{op},
-							}
-						}
-						close(c)
-					}()
 
-					return c
-				} else {
-					log.Println(expression.Operands)
-					panic("References within expressions are not supported yet")
-				}
-			}
+		if len(expression.Operands) == 0 {
+			panic("No operands for expression")
 		}
+
+		// Go over all operands. Check if handle expression returns something that is not
+		// the same as the input. If so, replace the operand with the result until the channel
+		// is closed.
+		//for i, operand := range expression.Operands {
+		//	channel := handleExpression(operand)
+		//	first := <-channel
+		//	if !equalInstances(operand, first) {
+		//		log.Println("Different", expression, operand, first)
+		//		go func() {
+		//			for instance := range channel {
+		//				expression.Operands[i] = first
+		//
+		//				for result := range handleExpression(expression) {
+		//					log.Println("Transformed", formatExpression(result))
+		//					c <- result
+		//				}
+		//
+		//				first = instance
+		//			}
+		//
+		//			close(c)
+		//		}()
+		//
+		//		return c
+		//	}
+		//}
+
+		//for _, operand := range expression.Operands {
+		//	if _, ok := operand.Value.([]string); ok {
+		//		if len(expression.Operands) == 1 {
+		//			go func() {
+		//				for op := range handleExpression(operand) {
+		//					c <- Expression{
+		//						Identifier: expression.Identifier,
+		//						Operands:   []Expression{op},
+		//					}
+		//				}
+		//				close(c)
+		//			}()
+		//
+		//			return c
+		//		} else {
+		//			log.Println(expression.Operands)
+		//			panic("References within expressions are not supported yet")
+		//		}
+		//	}
+		//}
 
 		go func() {
 			// TODO: This is needed as we cannot always evaluate instances to true/false (citizen(Bob))
