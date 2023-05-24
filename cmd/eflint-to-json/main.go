@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 )
 
 var (
 	eflintLexer = lexer.MustSimple([]lexer.SimpleRule{
 		{"whitespace", `\s+`},
+		{"Comment", `//.*`},
 		{`FactID`, `[a-z][a-z_-]*`},
 		{`Fact`, `Fact`},
 		{`StringType`, `String`},
@@ -37,6 +41,7 @@ var (
 		{`Holder`, `Holder`},
 		{`Claimant`, `Claimant`},
 
+		{`Foreach`, `Foreach`},
 		{`For`, `For`},
 		{`When`, `When`},
 
@@ -52,7 +57,14 @@ var (
 		{`False`, `False`},
 		{`OR`, `\|\|`},
 		{`AND`, `&&`},
+		{`EQ`, `==`},
+		{`NEQ`, `!=`},
+		{`GTE`, `>=`},
+		{`LTE`, `<=`},
+		{`GT`, `>`},
+		{`LT`, `<`},
 		{`NOT`, `NOT`},
+		{`Neg`, `!`},
 		{`Range`, `\.\.`},
 
 		{`Int`, `[0-9]+`},
@@ -66,13 +78,14 @@ var (
 		{`Terminate`, `-`},
 
 		{`Comma`, `,`},
-		{`Plus`, `\+`},
 		{`Star`, `\*`},
+		{`Dot`, `\.`},
 		{`Div`, `/`},
 		{`Mod`, `%`},
 		{`Range`, `\.\.`},
 		{`LParen`, `\(`},
 		{`RParen`, `\)`},
+		{`Colon`, `:`},
 		{"comment", `[#;][^\n]*`},
 		{"Newline", `\n`},
 	})
@@ -80,13 +93,59 @@ var (
 		participle.Lexer(eflintLexer),
 		participle.Union[Phrase](Fact{}, Query{}, Statement{}, Placeholder{}, Predicate{}, Event{}, Act{}, Duty{}, Extend{}),
 		// TODO: Figure out how to deal with parentheses in expressions (e.g. "a && (b || c)").
-		participle.Union[Expression](String{}, Int{}, ConstructorApplication{}, Reference{}, Arithmetic{}),
+		//participle.Union[Expression](ConstructorApplication{}, Reference{}, Operator{}, String{}, Int{}),
 		participle.Union[Range](String{}, Int{}),
+		participle.ParseTypeWith[Expression](parseExpression),
+		participle.Elide("Comment"),
 	)
 	version = "0.1.0"
 	kind    = "phrases"
 	updates = true
+
+	precedences = map[string]precedence{
+		"||": {1, 1},
+		"&&": {1, 1},
+		"==": {2, 2},
+		"!=": {2, 2},
+		"+":  {3, 3},
+		"-":  {3, 3},
+		"*":  {5, 4},
+		"/":  {7, 6},
+		"%":  {9, 8},
+		"<":  {10, 10},
+		">":  {10, 10},
+		"<=": {10, 10},
+		">=": {10, 10},
+	}
+
+	operatorNames = map[string]string{
+		"+": "ADD",
+		"-": "SUB",
+		"*": "MUL",
+		"/": "DIV",
+		"%": "MOD",
+
+		"==": "EQ",
+		"!=": "NEQ",
+
+		"<":  "LT",
+		">":  "GT",
+		">=": "GTE",
+		"<=": "LTE",
+
+		"!": "NOT",
+
+		"WHEN":  "WHEN",
+		"SUM":   "SUM",
+		"MAX":   "MAX",
+		"MIN":   "MIN",
+		"COUNT": "COUNT",
+
+		"Holds": "HOLDS",
+	}
 )
+
+type precedence struct{ Left, Right int }
 
 type Input struct {
 	Version string   `json:"version" parser:""`
@@ -216,45 +275,205 @@ type Expression interface {
 	expression()
 }
 
-type SubExpression struct {
-	Expression Expression `json:"expression" parser:"LParen @@ RParen"`
+func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
+	switch peek := lex.Peek(); {
+	case peek.Value == "Foreach" || peek.Value == "Exists":
+		lex.Next()
+
+		id := lex.Next()
+
+		if id.Type != eflintLexer.Symbols()["FactID"] {
+			return nil, participle.Errorf(id.Pos, "expected fact ID")
+		}
+
+		if lex.Next().Value != ":" {
+			return nil, participle.Errorf(id.Pos, "expected :")
+		}
+
+		expr, err := parseExpression(lex)
+		if err != nil {
+			return nil, err
+		}
+
+		return Iterator{
+			Iterator:   strings.ToUpper(peek.Value),
+			Binds:      []string{id.Value},
+			Expression: expr,
+		}, nil
+	case peek.Value == "Count" || peek.Value == "Sum" || peek.Value == "Min" || peek.Value == "Max" || peek.Value == "Holds":
+		lex.Next()
+
+		if lex.Peek().Value != "(" {
+			return nil, participle.Errorf(lex.Peek().Pos, "expected (")
+		}
+
+		lex.Next()
+
+		if peek.Value != "Holds" && lex.Peek().Value != "Foreach" {
+			return nil, participle.Errorf(lex.Peek().Pos, "expected Foreach")
+		}
+
+		expr, err := parseExpression(lex)
+		if err != nil {
+			return nil, err
+		}
+
+		if lex.Peek().Value != ")" {
+			return nil, participle.Errorf(lex.Peek().Pos, "expected )")
+		}
+
+		lex.Next()
+
+		return Operator{
+			Left:     expr,
+			Operator: strings.ToUpper(peek.Value),
+			Right:    nil,
+		}, nil
+
+	case peek.Type == eflintLexer.Symbols()["FactID"]:
+		id := lex.Next()
+
+		if lex.Peek().Type == eflintLexer.Symbols()["LParen"] {
+			lex.Next()
+			expr, err := parseExpression(lex)
+			if err != nil {
+				if lex.Peek().Type == eflintLexer.Symbols()["RParen"] {
+					lex.Next()
+					return ConstructorApplication{
+						Identifier: id.Value,
+						Operands:   []Expression{},
+					}, nil
+				}
+				return nil, err
+			}
+			operands := []Expression{expr}
+
+			for lex.Peek().Type == eflintLexer.Symbols()["Comma"] {
+				lex.Next()
+				expr, err := parseExpression(lex)
+				if err != nil {
+					return nil, err
+				}
+				operands = append(operands, expr)
+			}
+
+			if lex.Peek().Type != eflintLexer.Symbols()["RParen"] {
+				return nil, participle.Errorf(lex.Next().Pos, "expected )")
+			}
+			lex.Next()
+			return ConstructorApplication{
+				Identifier: id.Value,
+				Operands:   operands,
+			}, nil
+		}
+
+		return Reference{id.Value}, nil
+	case peek.Type == eflintLexer.Symbols()["String"]:
+		return String{lex.Next().Value}, nil
+	case peek.Type == eflintLexer.Symbols()["Int"]:
+		val, err := strconv.ParseInt(lex.Next().Value, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return Int{val}, nil
+	case peek.Value == "(":
+		lex.Next()
+		expr, err := parseExpression(lex)
+		if err != nil {
+			return nil, err
+		}
+		if lex.Peek().Value != ")" {
+			return nil, participle.Errorf(lex.Next().Pos, "expected )")
+		}
+		lex.Next()
+		return expr, nil
+	case peek.Value == "!":
+		log.Println("!")
+		lex.Next()
+		expr, err := parseExpressionAtom(lex)
+		if err != nil {
+			return nil, err
+		}
+		return Operator{
+			Left:     expr,
+			Operator: "!",
+			Right:    nil,
+		}, nil
+	default:
+		return nil, participle.NextMatch
+	}
 }
 
-func (s SubExpression) expression() {}
-func (s SubExpression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.Expression)
+func parseExpressionPrec(lex *lexer.PeekingLexer, minPrec int) (Expression, error) {
+	lhs, err := parseExpressionAtom(lex)
+	if err != nil {
+		return nil, err
+	}
+	//log.Println("lhs", lhs)
+
+	for {
+		peek := lex.Peek()
+		prec, ok := precedences[peek.Value]
+		if !ok || prec.Left < minPrec {
+			break
+		}
+		op := lex.Next().Value
+		rhs, err := parseExpressionPrec(lex, prec.Right)
+		//log.Println("rhs", rhs)
+		if err != nil {
+			return nil, err
+		}
+		lhs = Operator{lhs, op, rhs}
+	}
+
+	return lhs, nil
 }
 
-type Arithmetic struct {
-	Left     Expression `json:"left"     parser:"@@"`
-	Operator string     `json:"operator" parser:"@(Div | Star | Create | Terminate)"`
-	Right    Expression `json:"right"    parser:"@@"`
-}
+func parseExpression(lex *lexer.PeekingLexer) (Expression, error) {
+	expr, err := parseExpressionPrec(lex, 0)
 
-func (a Arithmetic) expression() {}
-func (a Arithmetic) MarshalJSON() ([]byte, error) {
-	return json.Marshal(Operator{
-		Operator: a.Operator,
-		Operands: []Expression{a.Left, a.Right},
-	})
+	if err != nil {
+		return nil, err
+	}
+
+	if lex.Peek().Value == "." {
+		lex.Next()
+	} else if lex.Peek().Value == "When" {
+		lex.Next()
+		rhs, err := parseExpression(lex)
+		if err != nil {
+			return nil, err
+		}
+		return Operator{
+			Left:     expr,
+			Operator: "WHEN",
+			Right:    rhs,
+		}, nil
+	}
+
+	return expr, nil
 }
 
 type Iterator struct { // TODO: Only a foreach can be inside an iterator
-	Operator string       `json:"operator" parser:"@(Count | Sum | Max | Min)"`
-	Operands []Expression `json:"operands" parser:"LParen @@ RParen"`
+	Iterator   string     `json:"iterator"`
+	Binds      []string   `json:"binds"`
+	Expression Expression `json:"expression"`
 }
+
+func (i Iterator) expression() {}
 
 type Not struct {
 	Expression Expression `json:"expression" parser:"Not @@"`
 }
 
 func (n Not) expression() {}
-func (n Not) MarshalJSON() ([]byte, error) {
-	return json.Marshal(Operator{
-		Operator: "NOT",
-		Operands: []Expression{n.Expression},
-	})
-}
+
+//func (n Not) MarshalJSON() ([]byte, error) {
+//	return json.Marshal(Operator{
+//		Operator: "NOT",
+//		Operands: []Expression{n.Expression},
+//	})
+//}
 
 type String struct {
 	Value string `parser:"@String"`
@@ -268,7 +487,7 @@ func (s String) MarshalJSON() ([]byte, error) {
 }
 
 type Int struct {
-	Value int `parser:"@Int"`
+	Value int64 `parser:"@Int"`
 }
 
 func (i Int) expression() {}
@@ -296,11 +515,33 @@ type ConstructorApplication struct {
 func (c ConstructorApplication) expression() {}
 
 type Operator struct {
-	Operator string       `json:"operator" parser:""`
-	Operands []Expression `json:"operands" parser:""`
+	Left     Expression `json:"left"`
+	Operator string     `json:"operator"`
+	Right    Expression `json:"right"`
 }
 
 func (o Operator) expression() {}
+
+func (o Operator) MarshalJSON() ([]byte, error) {
+	Operands := make([]Expression, 0, 2)
+
+	if o.Left != nil {
+		Operands = append(Operands, o.Left)
+	}
+
+	if o.Right != nil {
+		Operands = append(Operands, o.Right)
+	}
+
+	return json.Marshal(struct {
+		Operator string       `json:"operator"`
+		Operands []Expression `json:"operands"`
+	}{
+		Operator: operatorNames[o.Operator],
+		Operands: Operands,
+	})
+
+}
 
 func parseRangeValues(r []Range, tokens []lexer.Token) ([]Range, error) {
 	for t := range tokens {
@@ -437,11 +678,7 @@ func main() {
 			ini.Phrases[i] = p
 		case Predicate:
 			p := phrase.(Predicate)
-			if p.IsInvariant {
-				p.Kind = "invariant"
-			} else {
-				p.Kind = "predicate"
-			}
+			p.Kind = "predicate"
 			ini.Phrases[i] = p
 		}
 	}

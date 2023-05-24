@@ -1,0 +1,8 @@
+Fact age Identified by Int
+
+Predicate old When (Exists age : age > 18)
+Invariant not-too-old When (Exists age : age < 120)
+
+.
+
++age(20)

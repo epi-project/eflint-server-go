@@ -80,6 +80,7 @@ type Predicate struct {
 	Name        string     `json:"name"`
 	IsInvariant bool       `json:"is-invariant,omitempty"`
 	Expression  Expression `json:"expression"`
+	Status      bool       `json:"status,omitempty"`
 }
 
 type Event struct {
@@ -133,7 +134,7 @@ type Expression struct {
 	Operands   []Expression `json:"operands,omitempty"`
 	Iterator   string       `json:"iterator,omitempty"`
 	Binds      []string     `json:"binds,omitempty"`
-	Predicate  *Expression  `json:"predicate,omitempty"`
+	Expression *Expression  `json:"expression,omitempty"`
 }
 
 type Primitive struct {
@@ -163,9 +164,9 @@ type Operator struct {
 // - Iterators
 
 type Iterator struct {
-	Iterator  string     `json:"iterator"`
-	Binds     []string   `json:"binds"`
-	Predicate Expression `json:"predicate"`
+	Iterator   string     `json:"iterator"`
+	Binds      []string   `json:"binds"`
+	Expression Expression `json:"expression"`
 }
 
 // Triggers and Violations

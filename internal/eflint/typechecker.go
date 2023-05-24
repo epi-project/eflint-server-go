@@ -189,8 +189,8 @@ func TypecheckExtend(phrase Phrase) error {
 }
 
 func TypeCheckExpressions(expressions *[]Expression) error {
-	for _, expression := range *expressions {
-		err := TypeCheckExpression(&expression)
+	for i := range *expressions {
+		err := TypeCheckExpression(&(*expressions)[i])
 		if err != nil {
 			return err
 		}
