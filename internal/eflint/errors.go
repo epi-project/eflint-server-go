@@ -11,3 +11,6 @@ var ErrUnsupportedFields = errors.New("unsupported fields for this kind")
 
 // ErrUnknownKind is returned when an unknown kind is provided.
 var ErrUnknownKind = errors.New("unknown kind")
+
+// ErrUnknownType is returned when an unknown type is provided.
+var ErrUnknownType = errors.New("unknown type")

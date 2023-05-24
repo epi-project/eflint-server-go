@@ -196,9 +196,19 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 	}
 
 	var Operator Operator
-	if err := json.Unmarshal(data, &Operator); err == nil {
+	dec = json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&Operator); err == nil {
 		e.Operator = Operator.Operator
 		e.Operands = Operator.Operands
+		return nil
+	}
+
+	var Iterator Iterator
+	if err := json.Unmarshal(data, &Iterator); err == nil {
+		e.Iterator = Iterator.Iterator
+		e.Binds = Iterator.Binds
+		e.Expression = &Iterator.Expression
 		return nil
 	}
 
