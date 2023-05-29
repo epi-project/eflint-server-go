@@ -1,0 +1,24 @@
+Fact person Identified by Alice, Bob, Charlie, Dave, Olaf.
+
+Act create-person
+    Actor person
+    Creates person(person).
+
+Event test-act
+    Creates create-person(Alice),
+            create-person(Bob),
+            create-person(Olaf)
+    Syncs with create-person(Alice),
+               create-person(Bob),
+               create-person(Olaf).
+
++test-act().
+test-act().
+
+Duty test-duty
+    Holder person1
+    Claimant string
+    Violated when person(person1).
+
++test-duty(person, Admin).
+

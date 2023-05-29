@@ -44,6 +44,9 @@ type Phrase struct {
 	Claimant      string       `json:"claimant,omitempty"`
 	ViolatedWhen  *Expression  `json:"violated-when,omitempty"`
 	ParentKind    string       `json:"parent-kind,omitempty"`
+
+	// Extra information
+	FactType int `json:"-"`
 }
 
 type Query struct {
@@ -61,6 +64,7 @@ type AtomicFact struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
+	IsInvariant   bool         `json:"-"`
 }
 
 type CompositeFact struct {
@@ -69,6 +73,15 @@ type CompositeFact struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
+
+	// Needed by events / acts / duties
+	SyncsWith    []Expression `json:"-"`
+	Creates      []Expression `json:"-"`
+	Terminates   []Expression `json:"-"`
+	Obfuscates   []Expression `json:"-"`
+	ViolatedWhen *Expression  `json:"-"`
+
+	FactType int `json:"-"`
 }
 
 type Placeholder struct {
@@ -135,6 +148,7 @@ type Expression struct {
 	Iterator   string       `json:"iterator,omitempty"`
 	Binds      []string     `json:"binds,omitempty"`
 	Expression *Expression  `json:"expression,omitempty"`
+	IsDerived  bool         `json:"is-derived"`
 }
 
 type Primitive struct {

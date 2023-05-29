@@ -9,34 +9,47 @@ func DeriveFacts() {
 		changed = deriveFactsOnce()
 	}
 
-	DerivePredicates()
+	CheckViolations()
+
+	//DerivePredicates()
 }
 
-// TODO: You want to be able to query predicates, this is not possible right now.
+func CheckViolations() {
+	for factName, instances := range globalState["instances"] {
+		fact := globalState["facts"][factName]
+		if cfact, ok := fact.(CompositeFact); ok && cfact.ViolatedWhen != nil {
+			for _, instance := range instances.([]interface{}) {
+				clause := fillParameters(*cfact.ViolatedWhen, cfact.IdentifiedBy, instance.(Expression).Operands)
+				expr, ok := <-handleExpression(clause)
+				if !ok {
+					panic("Could not handle expression")
+				}
 
-func DerivePredicates() {
-	for _, predicate := range globalState["predicates"] {
-		predicate, ok := predicate.(Predicate)
-		if !ok {
-			panic("Predicate is not a predicate")
-		}
+				eval, err := evaluateInstance(expr)
+				if err != nil {
+					panic(err)
+				}
 
-		expr := <-handleExpression(predicate.Expression)
-		eval, err := evaluateInstance(expr)
-		if err != nil {
-			panic(err)
-		}
-
-		if eval != predicate.Status {
-			if predicate.Status {
-				log.Println("~", predicate.Name, "()")
-			} else {
-				log.Println("+", predicate.Name, "()")
+				if eval {
+					addViolation("duty", instance.(Expression))
+				}
 			}
-
-			predicate.Status = eval
+		} else if afact, ok := fact.(AtomicFact); ok && afact.IsInvariant {
+			if len(instances.([]interface{})) != 1 {
+				addViolation("invariant", Expression{Value: []string{factName}})
+			}
 		}
 	}
+}
+
+func containsInstance(instances []interface{}, instance Expression) bool {
+	for _, i := range instances {
+		if equalInstances(i.(Expression), instance) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func deriveFactsOnce() bool {
@@ -52,89 +65,124 @@ func deriveFactsOnce() bool {
 func deriveFact(fact interface{}) bool {
 	changed := false
 
-	// TODO: Clean this up.
+	var holdsWhen []Expression
+	var derivedFrom []Expression
+	var conditionedBy []Expression
+	var name string
+
 	if afact, ok := fact.(AtomicFact); ok {
-		rules := make([]Expression, 0, len(afact.DerivedFrom)+len(afact.HoldsWhen))
-
-		if len(afact.ConditionedBy) > 0 {
-			for _, derived := range afact.DerivedFrom {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: append([]Expression{derived}, afact.ConditionedBy...),
-				})
-			}
-
-			for _, holds := range afact.HoldsWhen {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: append([]Expression{holds, {Value: []string{afact.Name}}}, afact.ConditionedBy...),
-				})
-			}
-		} else {
-			rules = append(rules, afact.DerivedFrom...)
-
-			for _, holds := range afact.HoldsWhen {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: []Expression{
-						{Value: []string{afact.Name}},
-						holds,
-					},
-				})
-			}
-		}
-
-		for _, rule := range rules {
-			for instance := range handleExpression(rule) {
-				err := handleCreate(instance)
-				//if err != nil {
-				//	log.Println(err)
-				//}
-				changed = changed || (err == nil)
-			}
-		}
+		holdsWhen = afact.HoldsWhen
+		derivedFrom = afact.DerivedFrom
+		conditionedBy = afact.ConditionedBy
+		name = afact.Name
 	} else if cfact, ok := fact.(CompositeFact); ok {
-		rules := make([]Expression, 0, len(cfact.DerivedFrom)+len(cfact.HoldsWhen))
+		holdsWhen = cfact.HoldsWhen
+		derivedFrom = cfact.DerivedFrom
+		conditionedBy = cfact.ConditionedBy
+		name = cfact.Name
+	} else {
+		panic("Fact is neither atomic nor composite")
+	}
 
-		if len(cfact.ConditionedBy) > 0 {
-			for _, derived := range cfact.DerivedFrom {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: append([]Expression{derived}, cfact.ConditionedBy...),
-				})
-			}
-
-			for _, holds := range cfact.HoldsWhen {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: append([]Expression{holds, {Value: []string{cfact.Name}}}, cfact.ConditionedBy...),
-				})
-			}
-		} else {
-			rules = append(rules, cfact.DerivedFrom...)
-
-			for _, holds := range cfact.HoldsWhen {
-				rules = append(rules, Expression{
-					Operator: "WHEN",
-					Operands: []Expression{
-						{Value: []string{cfact.Name}},
-						holds,
-					},
-				})
+	for i := range derivedFrom {
+		if derivedFrom[i].Identifier != name {
+			derivedFrom[i] = Expression{
+				Identifier: name,
+				Operands:   []Expression{derivedFrom[i]},
 			}
 		}
+	}
 
-		for _, rule := range rules {
-			for instance := range handleExpression(rule) {
-				err := handleCreate(instance)
-				//if err != nil {
-				//	log.Println(err)
-				//}
-				changed = changed || (err == nil)
-			}
+	rules := make([]Expression, 0, len(derivedFrom)+len(holdsWhen))
+
+	if len(conditionedBy) > 0 {
+		for _, derived := range derivedFrom {
+			rules = append(rules, Expression{
+				Operator: "WHEN",
+				Operands: append([]Expression{derived}, conditionedBy...),
+			})
+		}
+
+		for _, holds := range holdsWhen {
+			rules = append(rules, Expression{
+				Operator: "WHEN",
+				Operands: append([]Expression{holds, {Value: []string{name}}}, conditionedBy...),
+			})
 		}
 	} else {
-		panic("Unknown fact type")
+		rules = append(rules, derivedFrom...)
+
+		for _, holds := range holdsWhen {
+			rules = append(rules, Expression{
+				Operator: "WHEN",
+				Operands: []Expression{
+					{Value: []string{name}},
+					holds,
+				},
+			})
+		}
+	}
+
+	result := make([]interface{}, 0, len(rules))
+
+	oldDerived := make([]interface{}, 0, len(globalState["instances"][name].([]interface{})))
+	oldPostulated := make([]interface{}, 0, len(globalState["instances"][name].([]interface{})))
+
+	for _, old := range globalState["instances"][name].([]interface{}) {
+		if oldExpr, ok := old.(Expression); ok {
+			if oldExpr.IsDerived {
+				oldDerived = append(oldDerived, oldExpr)
+			} else {
+				oldPostulated = append(oldPostulated, oldExpr)
+			}
+		}
+	}
+
+	//log.Println(globalState["instances"][name])
+	//log.Println("old derived", oldDerived)
+	//log.Println("old postulated", oldPostulated)
+
+	// Only keep the postulated facts.
+	globalState["instances"][name] = append([]interface{}{}, oldPostulated...)
+
+	// Go over all the rules and derive the facts.
+	for _, rule := range rules {
+		// Go over all instances of the rule.
+		for expr := range handleExpression(rule) {
+			converted, err := convertInstance(expr)
+			if err != nil {
+				panic(err)
+			}
+			//log.Println("got +", converted)
+			result = append(result, converted)
+		}
+	}
+
+	//log.Println("result", result)
+	//log.Println("old derived", oldDerived)
+	//log.Println("old postulated", oldPostulated)
+
+	for _, expr := range oldDerived {
+		if !containsInstance(result, expr.(Expression)) {
+			changed = true
+			log.Println("~" + formatExpression(expr.(Expression)))
+		}
+	}
+
+	// TODO: BROKEN AS FUCK
+	for _, res := range result {
+		if expr, ok := res.(Expression); ok {
+			if !containsInstance(oldDerived, expr) {
+				err := handleCreate(expr, true)
+				//if err != nil {
+				//	log.Println("Derivation create error:", err)
+				//}
+				changed = changed || err == nil
+			} else {
+				expr.IsDerived = true
+				globalState["instances"][name] = append(globalState["instances"][name].([]interface{}), expr)
+			}
+		}
 	}
 
 	return changed

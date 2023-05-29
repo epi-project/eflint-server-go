@@ -1,0 +1,11 @@
+Fact string
+Fact person Identified by Alice, Bob, Charlie, Dave, Olaf
+
++person.
+
+Duty test-duty
+    Holder person
+    Claimant string
+    Violated when person(person).
+
++test-duty(person, Admin).

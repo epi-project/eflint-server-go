@@ -16,6 +16,11 @@ var boolType = reflect.TypeOf(true)
 var arrayType = reflect.TypeOf([]interface{}{})
 var objectType = reflect.TypeOf(map[string]interface{}{})
 
+var FactType = 0
+var EventType = 1
+var ActType = 2
+var DutyType = 3
+
 // TODO: Phrases can be stateless, so 1 global state is not enough.
 //       Can split into a global state and a local state.
 // TODO: Look into possibility of storing all the stateful phrases,

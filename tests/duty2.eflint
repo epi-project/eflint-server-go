@@ -1,0 +1,11 @@
+Fact person
+Fact test Identified by Test
+
+Duty test-duty
+    Holder test
+    Claimant test
+    Violated when 1 == 1.
+
++test-duty(test, test).
++person(Alice).
++person(Bob).

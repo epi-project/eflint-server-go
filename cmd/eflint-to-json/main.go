@@ -24,6 +24,7 @@ var (
 		{`DerivedFrom`, `Derived from`},
 		{`HoldsWhen`, `Holds when`},
 		{`ConditionedBy`, `Conditioned by`},
+		{`ViolatedWhen`, `Violated when`},
 		{`Placeholder`, `Placeholder`},
 		{`Predicate`, `Predicate`},
 		{`Invariant`, `Invariant`},
@@ -128,6 +129,9 @@ var (
 		"==": "EQ",
 		"!=": "NEQ",
 
+		"||": "OR",
+		"&&": "AND",
+
 		"<":  "LT",
 		">":  "GT",
 		">=": "GTE",
@@ -169,7 +173,7 @@ type Fact struct {
 	Name          string        `json:"name,omitempty"           parser:"Fact @FactID"`
 	Type          string        `json:"type,omitempty"           parser:"( (IdentifiedBy @(StringType | IntType))"`
 	IdentifiedBy  []string      `json:"identified-by,omitempty"  parser:"| (IdentifiedBy @FactID ( Star @FactID )*)"`
-	Range         []Range       `json:"range,omitempty"          parser:"| (IdentifiedBy (?= Int) @@ Range (?= Int) @@) | (IdentifiedBy @@ (Comma @@)*))?"`
+	Range         []Range       `json:"range,omitempty"          parser:"| (IdentifiedBy (?= Int Range) @@ Range (?= Int) @@) | (IdentifiedBy @@ (Comma @@)*))?"`
 	DerivedFrom   []Expression  `json:"derived-from,omitempty"   parser:"( (DerivedFrom @@ (Comma @@)*)"`
 	HoldsWhen     []Expression  `json:"holds-when,omitempty"     parser:"| (HoldsWhen @@ (Comma @@)*)"`
 	ConditionedBy []Expression  `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*) )*"`
@@ -188,7 +192,7 @@ type Query struct {
 func (q Query) phrase() {}
 
 type Statement struct {
-	Kind    string     `json:"kind"    parser:"@(Create | Obfuscate | Terminate)"`
+	Kind    string     `json:"kind"    parser:"(@(Create | Obfuscate | Terminate))?"`
 	Operand Expression `json:"operand" parser:"@@"`
 }
 
@@ -237,6 +241,7 @@ type Act struct {
 	Kind          string       `json:"kind"                     parser:"Act" default:"Act"`
 	Name          string       `json:"name"                     parser:"@FactID"`
 	Actor         string       `json:"actor,omitempty"          parser:"Actor @FactID"`
+	Recipient     string       `json:"-"                        parser:"(Recipient @FactID)?"`
 	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @FactID ( Comma @FactID )*)?"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
@@ -249,6 +254,16 @@ type Act struct {
 
 func (a Act) phrase() {}
 
+func (a Act) marshalJSON() ([]byte, error) {
+	type Alias Act
+	a.RelatedTo = append(a.RelatedTo, a.Recipient)
+	return json.Marshal(&struct {
+		Alias
+	}{
+		Alias: (Alias)(a),
+	})
+}
+
 type Duty struct {
 	Kind          string       `json:"kind"                     parser:"Duty" default:"Duty"`
 	Name          string       `json:"name"                     parser:"@FactID"`
@@ -258,7 +273,7 @@ type Duty struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*) )*"`
-	ViolatedWhen  Expression   `json:"violated-when"            parser:"@@"`
+	ViolatedWhen  Expression   `json:"violated-when"            parser:"ViolatedWhen @@"`
 }
 
 func (d Duty) phrase() {}
@@ -669,7 +684,7 @@ func main() {
 			} else if s.Kind == "~" {
 				s.Kind = "obfuscate"
 			} else {
-				panic("unknown statement type")
+				s.Kind = "trigger"
 			}
 			ini.Phrases[i] = s
 		case Placeholder:
@@ -680,6 +695,18 @@ func main() {
 			p := phrase.(Predicate)
 			p.Kind = "predicate"
 			ini.Phrases[i] = p
+		case Event:
+			e := phrase.(Event)
+			e.Kind = "event"
+			ini.Phrases[i] = e
+		case Act:
+			a := phrase.(Act)
+			a.Kind = "act"
+			ini.Phrases[i] = a
+		case Duty:
+			d := phrase.(Duty)
+			d.Kind = "duty"
+			ini.Phrases[i] = d
 		}
 	}
 

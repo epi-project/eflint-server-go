@@ -1,5 +1,7 @@
 package eflint
 
+import "log"
+
 func isSupportedVersion(version string) bool {
 	for _, supportedVersion := range SupportedVersions {
 		if version == supportedVersion {
@@ -209,6 +211,7 @@ func TypeCheckExpression(expression *Expression) error {
 
 	if expression.Identifier != "" && len(expression.Operands) == 0 {
 		if !factExists(expression.Identifier) {
+			log.Println(expression)
 			panic("Fact does not exist in typecheck")
 		}
 
