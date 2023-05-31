@@ -172,14 +172,17 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 }
 
 func (e *Expression) UnmarshalJSON(data []byte) error {
+	//log.Println("UnmarshalJSON", string(data))
 	var Primitive Primitive
 	if err := json.Unmarshal(data, &Primitive); err == nil {
+		//log.Println("Primitive", Primitive)
 		e.Value = Primitive.Value
 		return nil
 	}
 
 	var VariableReference []string
 	if err := json.Unmarshal(data, &VariableReference); err == nil {
+		//log.Println("VariableReference", VariableReference)
 		if len(VariableReference) == 1 {
 			e.Value = VariableReference
 			return nil
@@ -190,6 +193,7 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&ConstructorApplication); err == nil {
+		//log.Println("ConstructorApplication", ConstructorApplication)
 		e.Identifier = ConstructorApplication.Identifier
 		e.Operands = ConstructorApplication.Operands
 		return nil
@@ -199,18 +203,32 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 	dec = json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&Operator); err == nil {
+		//log.Println("Operator", Operator)
 		e.Operator = Operator.Operator
 		e.Operands = Operator.Operands
 		return nil
 	}
 
 	var Iterator Iterator
-	if err := json.Unmarshal(data, &Iterator); err == nil {
+	dec = json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&Iterator); err == nil {
+		//log.Println("Iterator", Iterator)
 		e.Iterator = Iterator.Iterator
 		e.Binds = Iterator.Binds
 		e.Expression = &Iterator.Expression
 		return nil
 	}
+
+	var Projection Projection
+	if err := json.Unmarshal(data, &Projection); err == nil {
+		//log.Println("Projection", Projection.Operand)
+		e.Parameter = Projection.Parameter
+		e.Operand = Projection.Operand
+		return nil
+	}
+
+	//log.Println("No match")
 
 	return fmt.Errorf("unknown expression type")
 }

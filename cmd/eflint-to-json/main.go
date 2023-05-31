@@ -15,6 +15,8 @@ var (
 	eflintLexer = lexer.MustSimple([]lexer.SimpleRule{
 		{"whitespace", `\s+`},
 		{"Comment", `//.*`},
+		// TODO: Add support for quotation marks.
+		{`DecoratedFactID`, `[a-z][a-z_-]*[0-9]+`},
 		{`FactID`, `[a-z][a-z_-]*`},
 		{`Fact`, `Fact`},
 		{`StringType`, `String`},
@@ -66,7 +68,6 @@ var (
 		{`LT`, `<`},
 		{`NOT`, `NOT`},
 		{`Neg`, `!`},
-		{`Range`, `\.\.`},
 
 		{`Int`, `[0-9]+`},
 		{`String`, `[A-Z][a-z0-9]*`},
@@ -81,9 +82,9 @@ var (
 		{`Comma`, `,`},
 		{`Star`, `\*`},
 		{`Dot`, `\.`},
+		{`Quote`, `\'`},
 		{`Div`, `/`},
 		{`Mod`, `%`},
-		{`Range`, `\.\.`},
 		{`LParen`, `\(`},
 		{`RParen`, `\)`},
 		{`Colon`, `:`},
@@ -93,8 +94,6 @@ var (
 	parser = participle.MustBuild[Input](
 		participle.Lexer(eflintLexer),
 		participle.Union[Phrase](Fact{}, Query{}, Statement{}, Placeholder{}, Predicate{}, Event{}, Act{}, Duty{}, Extend{}),
-		// TODO: Figure out how to deal with parentheses in expressions (e.g. "a && (b || c)").
-		//participle.Union[Expression](ConstructorApplication{}, Reference{}, Operator{}, String{}, Int{}),
 		participle.Union[Range](String{}, Int{}),
 		participle.ParseTypeWith[Expression](parseExpression),
 		participle.Elide("Comment"),
@@ -154,7 +153,7 @@ type precedence struct{ Left, Right int }
 type Input struct {
 	Version string   `json:"version" parser:""`
 	Kind    string   `json:"kind"    parser:""`
-	Phrases []Phrase `json:"phrases" parser:"@@*"`
+	Phrases []Phrase `json:"phrases" parser:"(Dot*)((@@)(Dot*))*"`
 	Updates bool     `json:"updates" parser:""`
 }
 
@@ -172,8 +171,8 @@ type Fact struct {
 	Updates       bool          `json:"updates,omitempty"        parser:""`
 	Name          string        `json:"name,omitempty"           parser:"Fact @FactID"`
 	Type          string        `json:"type,omitempty"           parser:"( (IdentifiedBy @(StringType | IntType))"`
-	IdentifiedBy  []string      `json:"identified-by,omitempty"  parser:"| (IdentifiedBy @FactID ( Star @FactID )*)"`
-	Range         []Range       `json:"range,omitempty"          parser:"| (IdentifiedBy (?= Int Range) @@ Range (?= Int) @@) | (IdentifiedBy @@ (Comma @@)*))?"`
+	IdentifiedBy  []string      `json:"identified-by,omitempty"  parser:"| (IdentifiedBy @(DecoratedFactID | FactID) ( Star @(DecoratedFactID | FactID) )*)"`
+	Range         []Range       `json:"range,omitempty"          parser:"| (IdentifiedBy (?= Int (Dot Dot)) @@ (Dot Dot) (?= Int) @@) | (IdentifiedBy @@ (Comma @@)*))?"`
 	DerivedFrom   []Expression  `json:"derived-from,omitempty"   parser:"( (DerivedFrom @@ (Comma @@)*)"`
 	HoldsWhen     []Expression  `json:"holds-when,omitempty"     parser:"| (HoldsWhen @@ (Comma @@)*)"`
 	ConditionedBy []Expression  `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*) )*"`
@@ -225,7 +224,7 @@ func (p Predicate) phrase() {}
 type Event struct {
 	Kind          string       `json:"kind"                     parser:"Event" default:"Event"`
 	Name          string       `json:"name"                     parser:"@FactID"`
-	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @FactID ( Comma @FactID )*)?"`
+	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @(DecoratedFactID | FactID) ( Comma @(DecoratedFactID | FactID) )*)?"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*)"`
@@ -240,9 +239,9 @@ func (e Event) phrase() {}
 type Act struct {
 	Kind          string       `json:"kind"                     parser:"Act" default:"Act"`
 	Name          string       `json:"name"                     parser:"@FactID"`
-	Actor         string       `json:"actor,omitempty"          parser:"Actor @FactID"`
-	Recipient     string       `json:"-"                        parser:"(Recipient @FactID)?"`
-	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @FactID ( Comma @FactID )*)?"`
+	Actor         string       `json:"actor,omitempty"          parser:"Actor @(DecoratedFactID | FactID)"`
+	Recipient     string       `json:"-"                        parser:"(Recipient @(DecoratedFactID | FactID))?"`
+	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @(DecoratedFactID | FactID) ( Comma @(DecoratedFactID | FactID) )*)?"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*)"`
@@ -267,9 +266,9 @@ func (a Act) marshalJSON() ([]byte, error) {
 type Duty struct {
 	Kind          string       `json:"kind"                     parser:"Duty" default:"Duty"`
 	Name          string       `json:"name"                     parser:"@FactID"`
-	Holder        string       `json:"holder"                   parser:"Holder @FactID"`
-	Claimant      string       `json:"claimant"                 parser:"Claimant @FactID"`
-	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @FactID ( Comma @FactID )*)?"`
+	Holder        string       `json:"holder"                   parser:"Holder @(DecoratedFactID | FactID)"`
+	Claimant      string       `json:"claimant"                 parser:"Claimant @(DecoratedFactID | FactID)"`
+	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @(DecoratedFactID | FactID) ( Comma @(DecoratedFactID | FactID) )*)?"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*) )*"`
@@ -297,7 +296,7 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 
 		id := lex.Next()
 
-		if id.Type != eflintLexer.Symbols()["FactID"] {
+		if id.Type != eflintLexer.Symbols()["FactID"] && id.Type != eflintLexer.Symbols()["DecoratedFactID"] {
 			return nil, participle.Errorf(id.Pos, "expected fact ID")
 		}
 
@@ -345,8 +344,12 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 			Right:    nil,
 		}, nil
 
-	case peek.Type == eflintLexer.Symbols()["FactID"]:
+	case peek.Type == eflintLexer.Symbols()["FactID"] || peek.Type == eflintLexer.Symbols()["DecoratedFactID"]:
 		id := lex.Next()
+
+		if lex.Peek().Type == eflintLexer.Symbols()["LParen"] && id.Type == eflintLexer.Symbols()["DecoratedFactID"] {
+			return nil, participle.Errorf(id.Pos, "expected FactID")
+		}
 
 		if lex.Peek().Type == eflintLexer.Symbols()["LParen"] {
 			lex.Next()
@@ -452,7 +455,21 @@ func parseExpression(lex *lexer.PeekingLexer) (Expression, error) {
 	}
 
 	if lex.Peek().Value == "." {
+		// TODO: Projections are ambiguous due to triggers.
 		lex.Next()
+		if lex.Peek().Type == eflintLexer.Symbols()["FactID"] || lex.Peek().Type == eflintLexer.Symbols()["DecoratedFactID"] {
+			check := lex.MakeCheckpoint()
+
+			id := lex.Next()
+			if lex.Peek().Value != "(" {
+				return Projection{
+					Parameter: id.Value,
+					Operand:   expr,
+				}, nil
+			}
+
+			lex.LoadCheckpoint(check)
+		}
 	} else if lex.Peek().Value == "When" {
 		lex.Next()
 		rhs, err := parseExpression(lex)
@@ -555,14 +572,20 @@ func (o Operator) MarshalJSON() ([]byte, error) {
 		Operator: operatorNames[o.Operator],
 		Operands: Operands,
 	})
-
 }
+
+type Projection struct {
+	Parameter string     `json:"parameter" parser:""`
+	Operand   Expression `json:"operand" parser:""`
+}
+
+func (p Projection) expression() {}
 
 func parseRangeValues(r []Range, tokens []lexer.Token) ([]Range, error) {
 	for t := range tokens {
-		if tokens[t].Value == ".." {
+		if tokens[t].Value == "." {
 			if len(r) != 2 {
-				return nil, fmt.Errorf("invalid range")
+				return r, nil
 			}
 			if _, ok := r[0].(Int); !ok {
 				return nil, fmt.Errorf("invalid range")

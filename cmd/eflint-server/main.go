@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
-	"github.com/k0kubun/pp/v3"
 	"log"
 	"net/http"
 )
@@ -46,7 +45,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pp.Println(input)
+	//pp.Println(input)
 
 	// TODO: Do something with the input
 	switch input.Kind {

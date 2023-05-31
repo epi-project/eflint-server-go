@@ -148,6 +148,8 @@ type Expression struct {
 	Iterator   string       `json:"iterator,omitempty"`
 	Binds      []string     `json:"binds,omitempty"`
 	Expression *Expression  `json:"expression,omitempty"`
+	Operand    *Expression  `json:"operand,omitempty"`
+	Parameter  string       `json:"parameter,omitempty"`
 	IsDerived  bool         `json:"is-derived"`
 }
 
@@ -189,6 +191,11 @@ type Trigger struct {
 	Identifier string `json:"identifier"`
 	Kind       string `json:"kind"`
 	Parent     string `json:"parent"`
+}
+
+type Projection struct {
+	Parameter string      `json:"parameter"`
+	Operand   *Expression `json:"operand"`
 }
 
 type Violation struct {

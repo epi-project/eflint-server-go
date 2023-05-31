@@ -185,5 +185,6 @@ func deriveFact(fact interface{}) bool {
 		}
 	}
 
+	//log.Println("Done with deriving fact", name, globalState["instances"][name])
 	return changed
 }
