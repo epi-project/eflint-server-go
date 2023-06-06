@@ -35,6 +35,7 @@ var (
 		{`SyncsWith`, `Syncs with`},
 		{`Creates`, `Creates`},
 		{`Holds`, `Holds`},
+		{`Enabled`, `Enabled`},
 		{`Terminates`, `Terminates`},
 		{`Obfuscates`, `Obfuscates`},
 		{`Actor`, `Actor`},
@@ -144,8 +145,9 @@ var (
 		"MIN":   "MIN",
 		"COUNT": "COUNT",
 
-		"HOLDS": "HOLDS",
-		"NOT":   "NOT",
+		"HOLDS":   "HOLDS",
+		"ENABLED": "ENABLED",
+		"NOT":     "NOT",
 	}
 )
 
@@ -333,7 +335,7 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 			Binds:      []string{id.Value},
 			Expression: expr,
 		}, nil
-	case peek.Value == "Count" || peek.Value == "Sum" || peek.Value == "Min" || peek.Value == "Max" || peek.Value == "Holds" || peek.Value == "Not":
+	case peek.Value == "Count" || peek.Value == "Sum" || peek.Value == "Min" || peek.Value == "Max" || peek.Value == "Holds" || peek.Value == "Enabled" || peek.Value == "Not":
 		lex.Next()
 
 		if lex.Peek().Value != "(" {
@@ -342,7 +344,7 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 
 		lex.Next()
 
-		if peek.Value != "Holds" && lex.Peek().Value != "Foreach" && peek.Value != "Not" {
+		if peek.Value != "Holds" && peek.Value != "Not" && peek.Value != "Enabled" && lex.Peek().Value != "Foreach" {
 			return nil, participle.Errorf(lex.Peek().Pos, "expected Foreach")
 		}
 

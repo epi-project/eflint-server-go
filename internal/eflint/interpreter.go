@@ -397,21 +397,41 @@ func handleTrigger(operand Expression) error {
 					break
 				}
 
+				syncsWith := make([]Expression, 0)
+				obfuscates := make([]Expression, 0)
+				terminates := make([]Expression, 0)
+				creates := make([]Expression, 0)
+
 				for _, sync := range cfact.SyncsWith {
-					handleTrigger(fillParameters(sync, cfact.IdentifiedBy, expr.Operands))
+					syncsWith = append(syncsWith, gatherExpressions(fillParameters(sync, cfact.IdentifiedBy, expr.Operands))...)
 				}
 
 				for _, obfuscate := range cfact.Obfuscates {
-					handleObfuscate(fillParameters(obfuscate, cfact.IdentifiedBy, expr.Operands))
+					obfuscates = append(obfuscates, gatherExpressions(fillParameters(obfuscate, cfact.IdentifiedBy, expr.Operands))...)
 				}
 
 				for _, terminate := range cfact.Terminates {
-					handleTerminate(fillParameters(terminate, cfact.IdentifiedBy, expr.Operands))
+					terminates = append(terminates, gatherExpressions(fillParameters(terminate, cfact.IdentifiedBy, expr.Operands))...)
 				}
 
-				for _, create := range cfact.Creates {
-					log.Println("Creating", create)
-					handleCreate(fillParameters(create, cfact.IdentifiedBy, expr.Operands), false)
+				for _, create1 := range cfact.Creates {
+					creates = append(creates, gatherExpressions(fillParameters(create1, cfact.IdentifiedBy, expr.Operands))...)
+				}
+
+				for _, sync := range syncsWith {
+					handleTrigger(sync)
+				}
+
+				for _, obfuscate := range obfuscates {
+					handleObfuscate(obfuscate)
+				}
+
+				for _, terminate := range terminates {
+					handleTerminate(terminate)
+				}
+
+				for _, create1 := range creates {
+					create(create1, false)
 				}
 			} else {
 				log.Println("Fact is not triggerable")
@@ -751,15 +771,11 @@ func create(op Expression, derived bool) error {
 // handleCreate explicitly sets a given expression to true,
 // by moving it from the non-instances to the instances list.
 func handleCreate(operand Expression, derived bool) error {
-	signal := make(chan struct{}, 1)
-	defer close(signal)
-
-	for op := range handleExpression(operand, signal) {
+	for _, op := range gatherExpressions(operand) {
 		err := create(op, derived)
 		if err != nil {
 			// TODO: Handle error
 		}
-		signal <- struct{}{}
 	}
 
 	return nil
@@ -769,10 +785,7 @@ func handleCreate(operand Expression, derived bool) error {
 // by moving it from the instances to the non-instances
 // list.
 func handleTerminate(operand Expression) error {
-	signal := make(chan struct{}, 1)
-	defer close(signal)
-
-	for op := range handleExpression(operand, signal) {
+	for _, op := range gatherExpressions(operand) {
 		op, err := convertInstance(op)
 		if err != nil {
 			return err
@@ -794,8 +807,6 @@ func handleTerminate(operand Expression) error {
 		}
 
 		globalNonInstances[op.Identifier].Set(hash, op)
-
-		signal <- struct{}{}
 	}
 
 	return nil
@@ -804,10 +815,7 @@ func handleTerminate(operand Expression) error {
 // handleObfuscate implicitly sets a given expression to false,
 // by removing it from both the instances and non-instances list.
 func handleObfuscate(operand Expression) error {
-	signal := make(chan struct{}, 1)
-	defer close(signal)
-
-	for op := range handleExpression(operand, signal) {
+	for _, op := range gatherExpressions(operand) {
 		if op.Identifier == "" {
 			log.Println("Skipping non-identifier expression", formatExpression(op))
 			continue
@@ -833,30 +841,19 @@ func handleObfuscate(operand Expression) error {
 		if _, present := globalNonInstances[op.Identifier].Get(hash); present {
 			globalNonInstances[op.Identifier].Delete(hash)
 		}
-
-		signal <- struct{}{}
 	}
 
 	return nil
 }
 
 func handleBQuery(expression Expression) error {
-	signal := make(chan struct{})
-	defer close(signal)
+	instances := gatherExpressions(expression)
 
-	instances := handleExpression(expression, signal)
-	if instances == nil {
-		panic("empty handleExpression result")
+	if len(instances) != 1 {
+		panic("multiple instances in handleBQuery")
 	}
 
-	instance := <-instances
-
-	// Check if there is more than one result
-	signal <- struct{}{}
-	if _, ok := <-instances; ok {
-		panic("multiple results from handleExpression")
-	}
-
+	instance := instances[0]
 	result, err := evaluateInstance(instance)
 
 	if err != nil {
@@ -1060,7 +1057,7 @@ func formatExpression(expression Expression) string {
 }
 
 func handleIQuery(expression Expression) error {
-	log.Println("?-" + formatExpression(expression))
+	Println("?-" + formatExpression(expression))
 
 	signal := make(chan struct{})
 
@@ -1207,6 +1204,20 @@ func evaluateInstance(instance Expression) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func gatherExpressions(expression Expression) []Expression {
+	result := make([]Expression, 0)
+	signal := make(chan struct{})
+	defer close(signal)
+
+	for instance := range handleExpression(expression, signal) {
+		result = append(result, instance)
+
+		signal <- struct{}{}
+	}
+
+	return result
 }
 
 // TODO: This can return any expression
@@ -1620,6 +1631,46 @@ func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expres
 				panic("Holds(t) requires t to evaluate to a an instance, not a literal")
 			}
 			eval, err := evaluateInstance(expr1)
+			if err != nil {
+				panic(err)
+			}
+
+			c <- Expression{
+				Value: eval,
+			}
+
+			close(c)
+		}()
+	} else if expression.Operator == "ENABLED" {
+		expr := expression.Operands[0]
+		conditions := make([]Expression, 0)
+		fact := globalState["facts"][expression.Operands[0].Identifier]
+		if afact, ok := fact.(AtomicFact); ok {
+			for _, condition := range afact.ConditionedBy {
+				conditions = append(conditions, fillParameters(condition, []string{afact.Name}, []Expression{expr}))
+			}
+		} else if cfact, ok := fact.(CompositeFact); ok {
+			for _, condition := range cfact.ConditionedBy {
+				conditions = append(conditions, fillParameters(condition, cfact.IdentifiedBy, expr.Operands))
+			}
+		} else {
+			panic("Unknown fact type")
+		}
+
+		signal1 := make(chan struct{})
+		defer close(signal1)
+		expr = <-handleExpression(Expression{
+			Operator: "AND",
+			Operands: append([]Expression{
+				{
+					Operator: "HOLDS",
+					Operands: []Expression{expression.Operands[0]},
+				},
+			}, conditions...),
+		}, signal1)
+
+		go func() {
+			eval, err := evaluateInstance(expr)
 			if err != nil {
 				panic(err)
 			}

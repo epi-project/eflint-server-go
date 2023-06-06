@@ -1,6 +1,0 @@
-Fact x Identified by Int.
-
-+int(1).
-+int(2).
-
-+(x(int) When ((int == 1) || Holds(x(1)))).

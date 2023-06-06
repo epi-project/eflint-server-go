@@ -1,5 +1,5 @@
 Fact even Identified by Int.
-Event expand Creates even(2), even(even * 2), even(even + 2).
+Event expand Creates even(2) Creates even(even*2) Creates even(even+2).
 expand().
 expand().
 expand().
