@@ -1,5 +1,5 @@
-Fact string
-Fact person Identified by Alice, Bob, Charlie, Dave, Olaf
+Fact string.
+Fact person Identified by Alice, Bob, Charlie, Dave, Olaf.
 
 +person.
 

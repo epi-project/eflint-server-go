@@ -1,3 +1,4 @@
+Fact string Identified by String.
 Fact person Identified by Alice, Bob, Charlie, Dave, Olaf.
 
 Act create-person

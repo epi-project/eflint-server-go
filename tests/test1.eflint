@@ -1,8 +1,8 @@
-Fact x Identified by 1..10 Holds when x(x + 1)
-Fact y Identified by 1..10 Holds when x(x + 1)
+Duty test Holder string2 Claimant string1 Violated when 1 == 1.
 
-+x(5)
+Fact x Identified by 1..10.
 
-Fact y Identified by 1..10 Holds when x(y + 1)
++test(A, B).
 
-Fact a Identified by 1..10 Holds when !a
+?x(1).
+?x(1).

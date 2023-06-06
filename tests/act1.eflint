@@ -1,2 +1,12 @@
-Fact vote Identified by string1 * string2.
-Act cast-vote Actor string1 Recipient string2 Conditioned by Not(Exists string' : vote(string1, string')) Creates vote(string1, string2).
+Fact test.
+Fact administrator.
+
+Fact person Identified by Alice, Bob, Charlie, Dave.
+
+Act enable-duty
+    Actor administrator
+    Recipient person
+    Holds when administrator
+    Creates test(A).
+
++administrator(Admin).

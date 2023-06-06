@@ -160,6 +160,13 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 		}
 		p.ParentKind = ext.ParentKind
 		p.Name = ext.Name
+		p.DerivedFrom = ext.DerivedFrom
+		p.HoldsWhen = ext.HoldsWhen
+		p.ConditionedBy = ext.ConditionedBy
+		p.SyncsWith = ext.SyncsWith
+		p.Creates = ext.Creates
+		p.Terminates = ext.Terminates
+		p.Obfuscates = ext.Obfuscates
 	default:
 		return fmt.Errorf("unknown kind: " + aux.Kind)
 	}
@@ -172,7 +179,6 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 }
 
 func (e *Expression) UnmarshalJSON(data []byte) error {
-	//log.Println("UnmarshalJSON", string(data))
 	var Primitive Primitive
 	if err := json.Unmarshal(data, &Primitive); err == nil {
 		//log.Println("Primitive", Primitive)
@@ -221,14 +227,14 @@ func (e *Expression) UnmarshalJSON(data []byte) error {
 	}
 
 	var Projection Projection
-	if err := json.Unmarshal(data, &Projection); err == nil {
+	dec = json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&Projection); err == nil {
 		//log.Println("Projection", Projection.Operand)
 		e.Parameter = Projection.Parameter
 		e.Operand = Projection.Operand
 		return nil
 	}
-
-	//log.Println("No match")
 
 	return fmt.Errorf("unknown expression type")
 }
@@ -281,6 +287,31 @@ func (e Expression) MarshalJSON() ([]byte, error) {
 		*Alias
 	}{
 		Alias: (*Alias)(&e),
+	})
+}
+
+func (p PhraseResult) MarshalJSON() ([]byte, error) {
+
+	if p.IsBquery {
+		return json.Marshal(&BQueryResult{
+			Success: p.Success,
+			Errors:  p.Errors,
+			Result:  p.Result,
+		})
+	} else if p.IsIquery {
+		return json.Marshal(&IQueryResult{
+			Success: p.Success,
+			Errors:  p.Errors,
+			Result:  p.Results,
+		})
+	}
+
+	return json.Marshal(&StateChanges{
+		Success:    p.Success,
+		Changes:    p.Changes,
+		Triggers:   p.Triggers,
+		Violated:   p.Violated,
+		Violations: p.Violations,
 	})
 }
 

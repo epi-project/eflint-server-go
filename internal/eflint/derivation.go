@@ -1,6 +1,8 @@
 package eflint
 
-import "log"
+import (
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+)
 
 func DeriveFacts() {
 	changed := true
@@ -15,12 +17,15 @@ func DeriveFacts() {
 }
 
 func CheckViolations() {
-	for factName, instances := range globalState["instances"] {
+	signal := make(chan struct{})
+	defer close(signal)
+
+	for factName, instances := range globalInstances {
 		fact := globalState["facts"][factName]
 		if cfact, ok := fact.(CompositeFact); ok && cfact.ViolatedWhen != nil {
-			for _, instance := range instances.([]interface{}) {
-				clause := fillParameters(*cfact.ViolatedWhen, cfact.IdentifiedBy, instance.(Expression).Operands)
-				expr, ok := <-handleExpression(clause)
+			for pair := instances.Oldest(); pair != nil; pair = pair.Next() {
+				clause := fillParameters(*cfact.ViolatedWhen, cfact.IdentifiedBy, pair.Value.Operands)
+				expr, ok := <-handleExpression(clause, signal)
 				if !ok {
 					panic("Could not handle expression")
 				}
@@ -31,25 +36,15 @@ func CheckViolations() {
 				}
 
 				if eval {
-					addViolation("duty", instance.(Expression))
+					addViolation("duty", pair.Value)
 				}
 			}
 		} else if afact, ok := fact.(AtomicFact); ok && afact.IsInvariant {
-			if len(instances.([]interface{})) != 1 {
+			if instances.Len() != 1 {
 				addViolation("invariant", Expression{Value: []string{factName}})
 			}
 		}
 	}
-}
-
-func containsInstance(instances []interface{}, instance Expression) bool {
-	for _, i := range instances {
-		if equalInstances(i.(Expression), instance) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func deriveFactsOnce() bool {
@@ -63,8 +58,6 @@ func deriveFactsOnce() bool {
 }
 
 func deriveFact(fact interface{}) bool {
-	changed := false
-
 	var holdsWhen []Expression
 	var derivedFrom []Expression
 	var conditionedBy []Expression
@@ -84,29 +77,31 @@ func deriveFact(fact interface{}) bool {
 		panic("Fact is neither atomic nor composite")
 	}
 
-	for i := range derivedFrom {
-		if derivedFrom[i].Identifier != name {
-			derivedFrom[i] = Expression{
-				Identifier: name,
-				Operands:   []Expression{derivedFrom[i]},
-			}
-		}
-	}
-
 	rules := make([]Expression, 0, len(derivedFrom)+len(holdsWhen))
+	instance := Expression{Value: []string{name}}
+
+	if _, ok := globalState["facts"][name].(CompositeFact); ok {
+		instance = Expression{Identifier: name}
+	}
 
 	if len(conditionedBy) > 0 {
 		for _, derived := range derivedFrom {
 			rules = append(rules, Expression{
 				Operator: "WHEN",
-				Operands: append([]Expression{derived}, conditionedBy...),
+				Operands: []Expression{derived, {
+					Operator: "AND",
+					Operands: append([]Expression{}, conditionedBy...),
+				}},
 			})
 		}
 
 		for _, holds := range holdsWhen {
 			rules = append(rules, Expression{
 				Operator: "WHEN",
-				Operands: append([]Expression{holds, {Value: []string{name}}}, conditionedBy...),
+				Operands: []Expression{instance, {
+					Operator: "AND",
+					Operands: append([]Expression{holds}, conditionedBy...),
+				}},
 			})
 		}
 	} else {
@@ -116,75 +111,77 @@ func deriveFact(fact interface{}) bool {
 			rules = append(rules, Expression{
 				Operator: "WHEN",
 				Operands: []Expression{
-					{Value: []string{name}},
+					copyExpression(instance),
 					holds,
 				},
 			})
 		}
 	}
 
-	result := make([]interface{}, 0, len(rules))
+	oldDerived := orderedmap.New[uint64, Expression]()
 
-	oldDerived := make([]interface{}, 0, len(globalState["instances"][name].([]interface{})))
-	oldPostulated := make([]interface{}, 0, len(globalState["instances"][name].([]interface{})))
+	for pair := globalInstances[name].Oldest(); pair != nil; {
+		next := pair.Next()
 
-	for _, old := range globalState["instances"][name].([]interface{}) {
-		if oldExpr, ok := old.(Expression); ok {
-			if oldExpr.IsDerived {
-				oldDerived = append(oldDerived, oldExpr)
-			} else {
-				oldPostulated = append(oldPostulated, oldExpr)
+		if pair.Value.IsDerived {
+			oldDerived.Set(pair.Key, pair.Value)
+			globalInstances[name].Delete(pair.Key)
+		}
+
+		pair = next
+	}
+
+	changed := true
+
+	for changed {
+		changed = false
+
+		// Go over all the rules and derive the facts.
+		for _, rule := range rules {
+			// Go over all instances of the rule.
+			signal := make(chan struct{}, 1)
+
+			for expr := range handleExpression(rule, signal) {
+				//log.Println("Derived", name, "with", expr)
+				if expr.Identifier != name {
+					expr = Expression{
+						Identifier: name,
+						Operands:   []Expression{expr},
+					}
+				}
+
+				err := create(expr, true)
+
+				if err != nil {
+					//log.Println("Error deriving", name, "with", expr, ":", err)
+					//panic(err)
+				} else {
+					changed = true
+				}
+
+				signal <- struct{}{}
 			}
+
+			close(signal)
 		}
 	}
 
-	//log.Println(globalState["instances"][name])
-	//log.Println("old derived", oldDerived)
-	//log.Println("old postulated", oldPostulated)
-
-	// Only keep the postulated facts.
-	globalState["instances"][name] = append([]interface{}{}, oldPostulated...)
-
-	// Go over all the rules and derive the facts.
-	for _, rule := range rules {
-		// Go over all instances of the rule.
-		for expr := range handleExpression(rule) {
-			converted, err := convertInstance(expr)
-			if err != nil {
-				panic(err)
-			}
-			//log.Println("got +", converted)
-			result = append(result, converted)
+	for pair := oldDerived.Oldest(); pair != nil; pair = pair.Next() {
+		if _, ok := globalInstances[name].Get(pair.Key); !ok {
+			return true
 		}
 	}
 
-	//log.Println("result", result)
-	//log.Println("old derived", oldDerived)
-	//log.Println("old postulated", oldPostulated)
+	for pair := globalInstances[name].Oldest(); pair != nil; pair = pair.Next() {
+		//log.Printf("new: %v -> %v\n", pair.Key, pair.Value)
+		if !pair.Value.IsDerived {
+			continue
+		}
 
-	for _, expr := range oldDerived {
-		if !containsInstance(result, expr.(Expression)) {
-			changed = true
-			log.Println("~" + formatExpression(expr.(Expression)))
+		if _, ok := oldDerived.Get(pair.Key); !ok {
+			return true
 		}
 	}
 
-	// TODO: BROKEN AS FUCK
-	for _, res := range result {
-		if expr, ok := res.(Expression); ok {
-			if !containsInstance(oldDerived, expr) {
-				err := handleCreate(expr, true)
-				//if err != nil {
-				//	log.Println("Derivation create error:", err)
-				//}
-				changed = changed || err == nil
-			} else {
-				expr.IsDerived = true
-				globalState["instances"][name] = append(globalState["instances"][name].([]interface{}), expr)
-			}
-		}
-	}
-
-	//log.Println("Done with deriving fact", name, globalState["instances"][name])
-	return changed
+	return false
 }

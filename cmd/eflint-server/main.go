@@ -8,7 +8,7 @@ import (
 )
 
 // handler for the root path
-func handler(w http.ResponseWriter, r *http.Request) {
+func eFLINTHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var input eflint.Input
 	decoder := json.NewDecoder(r.Body)
@@ -82,7 +82,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/", eFLINTHandler)
 	log.Println("Starting at http://localhost:8090")
 	log.Fatal(http.ListenAndServe(":8090", nil))
 }

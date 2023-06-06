@@ -1,5 +1,3 @@
-Fact int Identified by 1..10
+Fact pair Identified by int * string.
 
-Fact pair Identified by int1 * int2
-
-+(pair(int1, int2) When int1 == int2)
+Extend Fact pair Derived from pair(1, A).
