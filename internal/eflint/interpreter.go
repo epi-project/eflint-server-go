@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	verbose = true
+	verbose = false
 )
 
 func Println(a ...any) {
