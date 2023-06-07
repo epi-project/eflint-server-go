@@ -1,0 +1,8 @@
+Fact stop Identified by Stop.
+Fact x Identified by 1..10 Conditioned by !Holds(stop(Stop)).
+?!Enabled(x(1)).
++x.
+?x(1).
+?Enabled(x(1)).
++stop(Stop).
+?!Enabled(x(1)).

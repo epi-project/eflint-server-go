@@ -1,0 +1,16 @@
+Fact string Identified by String
+Fact name Identified by String
+
+Act create-name-act
+    Actor name
+    Creates name(name).
+
+Event create-name-event
+    Related to name
+    Creates name(name).
+
+create-name-act(Olaf).
+create-name-event(Olaf).
+
++create-name-act(Olaf).
++create-name-event(Olaf).

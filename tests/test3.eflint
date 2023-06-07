@@ -1,5 +1,3 @@
-Fact number Identified by Int
-Fact ten Identified by 1..10
+Fact pair Identified by int * string.
 
-+ten
-?-ten
+Extend Fact pair Derived from pair(1, A).

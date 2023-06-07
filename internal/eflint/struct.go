@@ -44,6 +44,9 @@ type Phrase struct {
 	Claimant      string       `json:"claimant,omitempty"`
 	ViolatedWhen  *Expression  `json:"violated-when,omitempty"`
 	ParentKind    string       `json:"parent-kind,omitempty"`
+
+	// Extra information
+	FactType int `json:"-"`
 }
 
 type Query struct {
@@ -61,6 +64,7 @@ type AtomicFact struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
+	IsInvariant   bool         `json:"-"`
 }
 
 type CompositeFact struct {
@@ -69,6 +73,15 @@ type CompositeFact struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
+
+	// Needed by events / acts / duties
+	SyncsWith    []Expression `json:"-"`
+	Creates      []Expression `json:"-"`
+	Terminates   []Expression `json:"-"`
+	Obfuscates   []Expression `json:"-"`
+	ViolatedWhen *Expression  `json:"-"`
+
+	FactType int `json:"-"`
 }
 
 type Placeholder struct {
@@ -120,8 +133,15 @@ type Duty struct {
 }
 
 type Extend struct {
-	ParentKind string `json:"parent-kind"`
-	Name       string `json:"name"`
+	ParentKind    string       `json:"parent-kind"`
+	Name          string       `json:"name"`
+	DerivedFrom   []Expression `json:"derived-from,omitempty"`
+	HoldsWhen     []Expression `json:"holds-when,omitempty"`
+	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
+	SyncsWith     []Expression `json:"syncs-with,omitempty"`
+	Creates       []Expression `json:"creates,omitempty"`
+	Terminates    []Expression `json:"terminates,omitempty"`
+	Obfuscates    []Expression `json:"obfuscates,omitempty"`
 }
 
 // Expression is one of 5 types:
@@ -135,6 +155,9 @@ type Expression struct {
 	Iterator   string       `json:"iterator,omitempty"`
 	Binds      []string     `json:"binds,omitempty"`
 	Expression *Expression  `json:"expression,omitempty"`
+	Operand    *Expression  `json:"operand,omitempty"`
+	Parameter  string       `json:"parameter,omitempty"`
+	IsDerived  bool         `json:"-" hash:"-"`
 }
 
 type Primitive struct {
@@ -177,21 +200,40 @@ type Trigger struct {
 	Parent     string `json:"parent"`
 }
 
+type Projection struct {
+	Parameter string      `json:"parameter"`
+	Operand   *Expression `json:"operand"`
+}
+
 type Violation struct {
-	Identifier string `json:"identifier"`
-	Kind       string `json:"kind"`
+	Kind       string       `json:"kind"`
+	Identifier string       `json:"identifier"`
+	Operands   []Expression `json:"operands"`
 }
 
 type Output struct {
-	Success bool          `json:"success"`
-	Errors  []Error       `json:"errors,omitempty"`
-	Results []interface{} `json:"results,omitempty"`
-	Phrases []Phrase      `json:"phrases,omitempty"`
+	Success bool           `json:"success"`
+	Errors  []Error        `json:"errors,omitempty"`
+	Results []PhraseResult `json:"results,omitempty"`
+	Phrases []Phrase       `json:"phrases,omitempty"`
 }
 
 type Error struct {
 	Id      string `json:"id"`
 	Message string `json:"message"`
+}
+
+type PhraseResult struct {
+	Success    bool         `json:"success"`
+	Errors     []Error      `json:"errors,omitempty"`
+	Results    []Expression `json:"result"`
+	Changes    []Phrase     `json:"changes,omitempty"`
+	Triggers   []Trigger    `json:"triggers,omitempty"`
+	Violated   bool         `json:"violated"`
+	Violations []Violation  `json:"violations,omitempty"`
+	Result     bool         `json:"-"`
+	IsBquery   bool         `json:"-"`
+	IsIquery   bool         `json:"-"`
 }
 
 type BQueryResult struct {
@@ -208,10 +250,10 @@ type IQueryResult struct {
 
 type StateChanges struct {
 	Success    bool        `json:"success"`
-	Changes    []Phrase    `json:"changes,omitempty"`
-	Triggers   []Trigger   `json:"triggers,omitempty"`
+	Changes    []Phrase    `json:"changes"`
+	Triggers   []Trigger   `json:"triggers"`
 	Violated   bool        `json:"violated"`
-	Violations []Violation `json:"violations,omitempty"`
+	Violations []Violation `json:"violations"`
 }
 
 type Result struct {

@@ -3,13 +3,12 @@ package main
 import (
 	"encoding/json"
 	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
-	"github.com/k0kubun/pp/v3"
 	"log"
 	"net/http"
 )
 
 // handler for the root path
-func handler(w http.ResponseWriter, r *http.Request) {
+func eFLINTHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var input eflint.Input
 	decoder := json.NewDecoder(r.Body)
@@ -46,7 +45,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pp.Println(input)
+	//pp.Println(input)
 
 	// TODO: Do something with the input
 	switch input.Kind {
@@ -83,7 +82,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/", eFLINTHandler)
 	log.Println("Starting at http://localhost:8090")
 	log.Fatal(http.ListenAndServe(":8090", nil))
 }
