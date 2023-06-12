@@ -37,7 +37,6 @@ func InterpretPhrases(phrases []Phrase) {
 	globalResults = make([]PhraseResult, 0)
 	globalState = make(map[string]map[string]interface{})
 	globalState["facts"] = make(map[string]interface{})
-	globalState["predicates"] = make(map[string]interface{})
 	globalState["placeholders"] = make(map[string]interface{})
 	globalInstances = make(map[string]*orderedmap.OrderedMap[uint64, Expression])
 	globalNonInstances = make(map[string]*orderedmap.OrderedMap[uint64, Expression])
@@ -353,10 +352,7 @@ func handleTrigger(operand Expression) error {
 	// A trigger can trigger an Event
 
 	// Iterate over the given operand
-	signal := make(chan struct{})
-	defer close(signal)
-
-	for expr := range handleExpression(operand, signal) {
+	for _, expr := range gatherExpressions(operand) {
 		if expr.Identifier == "" {
 			log.Println("Skipping non-identifier expression in trigger")
 			continue
@@ -439,8 +435,6 @@ func handleTrigger(operand Expression) error {
 		} else {
 			log.Println("Fact not found in trigger")
 		}
-
-		signal <- struct{}{}
 	}
 
 	return nil
@@ -1208,7 +1202,7 @@ func evaluateInstance(instance Expression) (bool, error) {
 
 func gatherExpressions(expression Expression) []Expression {
 	result := make([]Expression, 0)
-	signal := make(chan struct{})
+	signal := make(chan struct{}, 1)
 	defer close(signal)
 
 	for instance := range handleExpression(expression, signal) {
@@ -1299,6 +1293,13 @@ func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expr
 			close(c)
 		}()
 	} else if val, ok := expression.Value.(string); ok {
+		go func() {
+			c <- Expression{
+				Value: val,
+			}
+			close(c)
+		}()
+	} else if val, ok := expression.Value.(bool); ok {
 		go func() {
 			c <- Expression{
 				Value: val,

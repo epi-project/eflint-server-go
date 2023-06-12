@@ -40,6 +40,5 @@ var globalInstances = make(map[string]*orderedmap.OrderedMap[uint64, Expression]
 var globalNonInstances = make(map[string]*orderedmap.OrderedMap[uint64, Expression])
 var globalViolations = make(map[string][]Expression)
 
-var localState = make(map[string]interface{})
 var globalResults = make([]PhraseResult, 0)
 var globalErrors = make([]Error, 0)

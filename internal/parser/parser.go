@@ -20,6 +20,8 @@ var (
 		{`Fact`, `Fact`},
 		{`StringType`, `String`},
 		{`IntType`, `Int`},
+		{`True`, `True`},
+		{`False`, `False`},
 
 		{`IdentifiedBy`, `Identified by`},
 		{`DerivedFrom`, `Derived from`},
@@ -415,6 +417,12 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 			return nil, err
 		}
 		return Int{val}, nil
+	case peek.Type == eflintLexer.Symbols()["True"] || peek.Type == eflintLexer.Symbols()["False"]:
+		val, err := strconv.ParseBool(lex.Next().Value)
+		if err != nil {
+			return nil, err
+		}
+		return Bool{val}, nil
 	case peek.Value == "(":
 		lex.Next()
 		expr, err := parseExpression(lex)
@@ -447,7 +455,6 @@ func parseExpressionPrec(lex *lexer.PeekingLexer, minPrec int) (Expression, erro
 	if err != nil {
 		return nil, err
 	}
-	//log.Println("lhs", lhs)
 
 	for {
 		peek := lex.Peek()
@@ -457,7 +464,7 @@ func parseExpressionPrec(lex *lexer.PeekingLexer, minPrec int) (Expression, erro
 		}
 		op := lex.Next().Value
 		rhs, err := parseExpressionPrec(lex, prec.Right)
-		//log.Println("rhs", rhs)
+
 		if err != nil {
 			return nil, err
 		}
@@ -534,6 +541,16 @@ func (i Int) isRange()    {}
 
 func (i Int) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.Value)
+}
+
+type Bool struct {
+	Value bool
+}
+
+func (b Bool) expression() {}
+
+func (b Bool) MarshalJSON() ([]byte, error) {
+	return json.Marshal(b.Value)
 }
 
 type Reference struct {

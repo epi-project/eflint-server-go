@@ -1,5 +1,0 @@
-Fact a Identified by 1..50
-Fact b Identified by 1..50
-Fact c Identified by 1..50
-Fact pythagorean Identified by a * b * c
-    Derived from pythagorean(a, b, c) When a * a + b * b == c * c.
