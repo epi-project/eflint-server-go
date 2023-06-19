@@ -47,17 +47,7 @@ func CheckViolations() {
 	}
 }
 
-func deriveFactsOnce() bool {
-	changed := false
-
-	for _, fact := range globalState["facts"] {
-		changed = deriveFact(fact) || changed
-	}
-
-	return changed
-}
-
-func deriveFact(fact interface{}) bool {
+func generateDerivationRules(fact interface{}) (string, []Expression) {
 	var holdsWhen []Expression
 	var derivedFrom []Expression
 	var conditionedBy []Expression
@@ -118,6 +108,21 @@ func deriveFact(fact interface{}) bool {
 		}
 	}
 
+	return name, rules
+}
+
+func deriveFactsOnce() bool {
+	changed := false
+
+	for _, fact := range globalState["facts"] {
+		changed = deriveFact(fact) || changed
+	}
+
+	return changed
+}
+
+func deriveFact(fact interface{}) bool {
+	name, rules := generateDerivationRules(fact)
 	oldDerived := orderedmap.New[uint64, Expression]()
 
 	for pair := globalInstances[name].Oldest(); pair != nil; {
