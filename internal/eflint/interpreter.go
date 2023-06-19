@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	verbose           = true
+	verbose           = false
 	customDerivation  = false
 	derivationVersion = 3
 )
@@ -1737,65 +1737,26 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 	c := make(chan Expression)
 
 	if expression.Iterator == "FOREACH" {
-		if len(expression.Binds) != 1 {
-			log.Println(expression.Binds)
-			panic("FOREACH can currently only bind one variable")
-		}
-
 		go func() {
-			expr := *expression.Expression
-			bind := expression.Binds[0]
-			occurrences := findOccurrences(&expr, bind)
-
 			signal1 := make(chan struct{})
 			defer close(signal1)
 
-			for instance := range iterateFact(bind) {
-				// Replace all occurrences of the variable with the instance
-				for _, occurrence := range occurrences {
-					*occurrence = Expression{
-						Identifier: instance.Identifier,
-						Operands:   instance.Operands,
-					}
-				}
+			for expr := range handleExpression(*expression.Expression, signal1) {
+				c <- copyExpression(expr)
 
-				for result := range handleExpression(copyExpression(expr), signal1) {
-					c <- copyExpression(result)
-
-					<-signal
-					signal1 <- struct{}{}
-				}
+				<-signal
+				signal1 <- struct{}{}
 			}
 
 			close(c)
 		}()
 	} else if expression.Iterator == "EXISTS" {
-		if len(expression.Binds) != 1 {
-			panic("EXISTS can currently only bind one variable")
-		}
-
-		//log.Println("EXISTS", expression.Binds[0], *expression.Expression)
-
 		go func() {
-			expr := *expression.Expression
-			bind := expression.Binds[0]
-			occurrences := findOccurrences(&expr, bind)
-
 			signal1 := make(chan struct{})
 			defer close(signal1)
 
-			for instance := range iterateFact(bind) {
-				// Replace all occurrences of the variable with the instance
-				for _, occurrence := range occurrences {
-					*occurrence = Expression{
-						Identifier: instance.Identifier,
-						Operands:   instance.Operands,
-					}
-				}
-
-				exprResult := <-handleExpression(copyExpression(expr), signal1)
-
-				if eval, err := evaluateInstance(exprResult); err == nil {
+			for expr := range handleExpression(*expression.Expression, signal1) {
+				if eval, err := evaluateInstance(expr); err == nil {
 					if eval {
 						c <- Expression{
 							Value: true,
@@ -1806,11 +1767,15 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 				} else {
 					panic(err)
 				}
+
+				<-signal
+				signal1 <- struct{}{}
 			}
 
 			c <- Expression{
 				Value: false,
 			}
+
 			close(c)
 		}()
 	} else {

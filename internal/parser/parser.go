@@ -317,14 +317,24 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 	case peek.Value == "Foreach" || peek.Value == "Exists":
 		lex.Next()
 
-		id := lex.Next()
+		binds := make([]string, 0)
 
-		if id.Type != eflintLexer.Symbols()["FactID"] && id.Type != eflintLexer.Symbols()["DecoratedFactID"] {
-			return nil, participle.Errorf(id.Pos, "expected fact ID")
-		}
+		for {
+			id := lex.Next()
 
-		if lex.Next().Value != ":" {
-			return nil, participle.Errorf(id.Pos, "expected :")
+			if id.Type != eflintLexer.Symbols()["FactID"] && id.Type != eflintLexer.Symbols()["DecoratedFactID"] {
+				return nil, participle.Errorf(id.Pos, "expected fact ID")
+			}
+
+			binds = append(binds, id.Value)
+
+			token := lex.Next()
+
+			if token.Value == ":" {
+				break
+			} else if token.Value != "," {
+				return nil, participle.Errorf(token.Pos, "expected , or :")
+			}
 		}
 
 		expr, err := parseExpression(lex)
@@ -334,7 +344,7 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 
 		return Iterator{
 			Iterator:   strings.ToUpper(peek.Value),
-			Binds:      []string{id.Value},
+			Binds:      binds,
 			Expression: expr,
 		}, nil
 	case peek.Value == "Count" || peek.Value == "Sum" || peek.Value == "Min" || peek.Value == "Max" || peek.Value == "Holds" || peek.Value == "Enabled" || peek.Value == "Not":
