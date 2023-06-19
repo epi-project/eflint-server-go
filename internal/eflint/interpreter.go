@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	verbose = false
+	verbose           = true
+	customDerivation  = false
+	derivationVersion = 3
 )
 
 func Println(a ...any) {
@@ -172,7 +174,16 @@ func InterpretPhrase(phrase Phrase) error {
 
 	index := len(globalResults) - 1
 
-	DeriveFacts()
+	if derivationVersion == 1 {
+		DeriveFacts()
+	} else if derivationVersion == 2 {
+		DeriveFacts2()
+	} else if derivationVersion == 3 {
+		DeriveFacts3()
+	} else {
+		panic("unknown derivation version")
+	}
+
 	listViolations()
 
 	for factName, instances := range currentInstances {
@@ -1193,6 +1204,11 @@ func evaluateInstance(instance Expression) (bool, error) {
 		if _, present := globalInstances[instance.Identifier].Get(hash); present {
 			return true, nil
 		}
+
+		// Check if the instance is known to not exist
+		if _, present := globalNonInstances[instance.Identifier].Get(hash); present {
+			return false, nil
+		}
 	} else {
 		log.Println("Don't know what to do with instance:", instance)
 	}
@@ -1538,6 +1554,33 @@ func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expres
 
 		go func() {
 			if eval, err := evaluateInstance(expr); err == nil {
+				if customDerivation {
+					hash1, err := hashstructure.Hash(expr, hashstructure.FormatV2, nil)
+					if err != nil {
+						panic(err)
+					}
+
+					hash2, err := hashstructure.Hash(expr, hashstructure.FormatV2, nil)
+					if err != nil {
+						panic(err)
+					}
+
+					if hash1 == hash2 {
+						//log.Println("Negating literal", formatExpression(expr))
+						if _, present := globalNonInstances[expr.Identifier].Get(hash2); !present {
+							//log.Println("Assuming negated literal", formatExpression(expr), "is false")
+							// We assume that the instance does not exist
+							//log.Println("Assuming that", formatExpression(expr), "does not exist")
+							tempAssumptions = append(tempAssumptions, &Assumptions{
+								Expression:  hash2,
+								Knowledge:   copyKnowledge(),
+								Assumptions: copyAssumptions(),
+								Queue:       copyQueue(),
+							})
+						}
+					}
+				}
+
 				c <- Expression{
 					Value: !eval,
 				}
