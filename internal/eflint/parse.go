@@ -63,6 +63,7 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		p.Expression = &q.Expression
+		p.WhenTrue = q.WhenTrue
 	case "create":
 		fallthrough
 	case "terminate":

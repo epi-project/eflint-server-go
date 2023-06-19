@@ -76,6 +76,7 @@ var (
 		{`String`, `[A-Z][a-z0-9]*`},
 
 		// Statements
+		{`IqueryHolds`, `\?--`},
 		{`Iquery`, `\?-`},
 		{`Bquery`, `\?`},
 		{`Create`, `\+`},
@@ -187,9 +188,10 @@ type Fact struct {
 func (f Fact) phrase() {}
 
 type Query struct {
-	Kind      string     `json:"kind"                     parser:"@(Iquery | Bquery)"`
+	Kind      string     `json:"kind"                     parser:"@(IqueryHolds | Iquery | Bquery)"`
 	Stateless bool       `json:"stateless,omitempty"      parser:""`
 	Updates   bool       `json:"updates,omitempty"        parser:""`
+	WhenTrue  bool       `json:"when-true,omitempty"     parser:""`
 	Operand   Expression `json:"expression"               parser:"@@"`
 }
 
@@ -713,6 +715,9 @@ func ParseFile(filename string, file *os.File) ([]byte, error) {
 				q.Kind = "bquery"
 			} else if q.Kind == "?-" {
 				q.Kind = "iquery"
+			} else if q.Kind == "?--" {
+				q.Kind = "iquery"
+				q.WhenTrue = true
 			} else {
 				panic("unknown query type")
 			}

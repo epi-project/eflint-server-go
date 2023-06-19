@@ -150,7 +150,7 @@ func InterpretPhrase(phrase Phrase) error {
 		err = handleBQuery(*phrase.Expression)
 	case "iquery":
 		globalResults[len(globalResults)-1].IsIquery = true
-		err = handleIQuery(*phrase.Expression)
+		err = handleIQuery(*phrase.Expression, phrase.WhenTrue)
 	case "predicate":
 		err = handlePredicate(phrase)
 	case "event":
@@ -1061,8 +1061,12 @@ func formatExpression(expression Expression) string {
 	return ""
 }
 
-func handleIQuery(expression Expression) error {
-	Println("?-" + formatExpression(expression))
+func handleIQuery(expression Expression, filter bool) error {
+	if filter {
+		Println("?--" + formatExpression(expression))
+	} else {
+		Println("?-" + formatExpression(expression))
+	}
 
 	signal := make(chan struct{})
 
@@ -1074,7 +1078,17 @@ func handleIQuery(expression Expression) error {
 			panic("invalid instance in iquery result")
 		}
 
-		Println(formatExpression(instance))
+		if filter {
+			eval, err := evaluateInstance(instance)
+			if err != nil {
+				panic(err)
+			}
+			if eval {
+				Println(formatExpression(instance))
+			}
+		} else {
+			Println(formatExpression(instance))
+		}
 
 		results = append(results, instance)
 

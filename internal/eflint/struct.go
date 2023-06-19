@@ -28,6 +28,7 @@ type Phrase struct {
 	Name          interface{}  `json:"name,omitempty"`
 	Type          string       `json:"type,omitempty"`
 	Range         []Expression `json:"range,omitempty"`
+	WhenTrue      bool         `json:"when-true,omitempty"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
@@ -51,6 +52,7 @@ type Phrase struct {
 
 type Query struct {
 	Expression Expression `json:"expression"`
+	WhenTrue   bool       `json:"when-true,omitempty"`
 }
 
 type Statement struct {
