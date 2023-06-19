@@ -83,6 +83,6 @@ func eFLINTHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	http.HandleFunc("/", eFLINTHandler)
-	log.Println("Starting at http://localhost:8090")
+	log.Println("Starting at http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

@@ -9,4 +9,4 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-curl --location --request GET 'http://localhost:8090' --header 'Content-Type: application/json' --data-raw "$json" | python3 -m json.tool
+curl --location --request GET 'http://localhost:8080' --header 'Content-Type: application/json' --data-raw "$json" | python3 -m json.tool
