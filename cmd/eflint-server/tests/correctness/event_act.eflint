@@ -1,0 +1,15 @@
+Fact object Identified by Flower
+Fact nearby Identified by actor * object
+Fact owner-of Identified by actor * object
+Event break Related to object Syncs with destroy(actor, object) When nearby()
+Act destroy Actor actor Related to object Creates promise-to-compensate() When owner-of(actor1, object)
+Duty promise-to-compensate Holder actor Claimant actor1 Related to object Violated when False.
++actor(Alice).
++actor(Bob).
++owner-of(Alice, Flower).
++owner-of(Bob, Knife).
++nearby(Bob, Flower).
+?!Enabled(break(Flower)).
+?!Enabled(destroy(Bob,Flower)).
+break(Flower).
+?promise-to-compensate(Bob, Alice, Flower).

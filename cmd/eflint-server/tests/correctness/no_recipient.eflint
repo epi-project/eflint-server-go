@@ -1,0 +1,9 @@
+Fact actor
+Fact done
+Act do Actor actor Creates done(actor).
+?!done(Alice).
+do(Alice).
+?done(Alice).
+?!done(Bob).
+do(Bob).
+?done(Bob).

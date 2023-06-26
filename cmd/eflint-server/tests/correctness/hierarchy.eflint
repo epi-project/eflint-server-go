@@ -1,0 +1,25 @@
+Fact actor Identified by A
+Fact recipient Identified by R
+Act a Actor actor Recipient recipient Syncs with b()  Syncs with c()
+Act b Actor actor Recipient recipient Syncs with d()
+Act c Actor actor Recipient recipient  Syncs with e(), f()
+Act d Actor actor Recipient recipient
+Act e Actor recipient Recipient actor
+Act f Actor actor Recipient recipient Syncs with g()
+Act g Actor actor Recipient recipient Related to x
+Fact x Identified by 1,2,3.
++a.
++b.
++c.
++d.
++e.
++f.
++g.
+a(A,R).
+-e.
+b(A,R).
+c(A,R).
++e.
+-g.
+f(A,R).
+a(A,R).

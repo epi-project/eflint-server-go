@@ -1,0 +1,13 @@
+Fact person Identified by Alice, Bob
+Fact counter Identified by Int.
++counter(0).
+Act count Actor person1 Recipient person2 Creates counter(counter+1) Terminates counter
+Extend Act count Derived from count(Alice, Bob)
+Act force_stop Actor person1 Recipient person2 Terminates (Foreach counter: count(Alice, Bob)) Derived from force_stop(Bob, Alice).
+count(Alice,Bob).
+count(Alice,Bob).
+?count(Alice,Bob).
+force_stop(Bob,Alice).
+?!count(Alice,Bob).
+count(Alice,Bob).
+?counter(3).
