@@ -1,0 +1,12 @@
+Dockerfile
+.idea
+haskell-tests
+tests
+unusable
+eflint-server
+eflint-to-json
+eflint.sh
+EOF.txt
+*.eflint
+LICENSE
+README.md
