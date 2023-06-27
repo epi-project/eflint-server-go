@@ -1,7 +1,0 @@
-Fact name Identified by String
-
-Invariant too-many-names When (Count(Foreach name: name) < 2).
-
-+name(Alice).
-+name(Bob).
-+name(Charlie).

@@ -17,26 +17,29 @@ func DeriveFacts() {
 }
 
 func CheckViolations() {
-	signal := make(chan struct{})
-	defer close(signal)
-
 	for factName, instances := range globalInstances {
 		fact := globalState["facts"][factName]
-		if cfact, ok := fact.(CompositeFact); ok && cfact.ViolatedWhen != nil {
+		if cfact, ok := fact.(CompositeFact); ok && len(cfact.ViolatedWhen) > 0 {
 			for pair := instances.Oldest(); pair != nil; pair = pair.Next() {
-				clause := fillParameters(*cfact.ViolatedWhen, cfact.IdentifiedBy, pair.Value.Operands)
-				expr, ok := <-handleExpression(clause, signal)
-				if !ok {
-					panic("Could not handle expression")
-				}
+				for _, violation := range cfact.ViolatedWhen {
+					clause := fillParameters(violation, cfact.IdentifiedBy, pair.Value.Operands)
+					signal := make(chan struct{})
 
-				eval, err := evaluateInstance(expr)
-				if err != nil {
-					panic(err)
-				}
+					expr, ok := <-handleExpression(clause, signal)
+					if !ok {
+						panic("Could not handle expression")
+					}
 
-				if eval {
-					addViolation("duty", pair.Value)
+					eval, err := evaluateInstance(expr)
+					if err != nil {
+						panic(err)
+					}
+
+					if eval {
+						addViolation("duty", pair.Value)
+					}
+
+					close(signal)
 				}
 			}
 		} else if afact, ok := fact.(AtomicFact); ok && afact.IsInvariant {

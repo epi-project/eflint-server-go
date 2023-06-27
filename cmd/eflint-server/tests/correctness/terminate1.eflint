@@ -5,7 +5,7 @@ Fact x Identified by int.
 -x.
 ?!x(9).
 ?!x(10).
-Event wipe Related to intTerminates x(int).
+Event wipe Related to int Terminates x(int).
 +x(10).
 ?!x(9).
 ?x(10).

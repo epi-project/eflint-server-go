@@ -1,5 +1,0 @@
-Fact x Identified by 1..10 Holds when x(x - 1).
-+x(5).
-?x(9).
-?!x(1).
-?x(6).

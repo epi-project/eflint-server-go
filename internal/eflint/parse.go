@@ -153,7 +153,7 @@ func (p *Phrase) UnmarshalJSON(data []byte) error {
 		p.DerivedFrom = duty.DerivedFrom
 		p.HoldsWhen = duty.HoldsWhen
 		p.ConditionedBy = duty.ConditionedBy
-		p.ViolatedWhen = &duty.ViolatedWhen
+		p.ViolatedWhen = duty.ViolatedWhen
 	case "extend":
 		var ext Extend
 		if err := json.Unmarshal(data, &ext); err != nil {

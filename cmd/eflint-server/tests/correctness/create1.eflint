@@ -5,7 +5,7 @@ Fact x Identified by int.
 -x.
 ?!x(9).
 ?!x(10).
-Event make Related to intCreates x(int).
+Event make Related to int Creates x(int).
 make(10).
 ?!x(9).
 ?x(10).

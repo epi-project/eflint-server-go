@@ -43,7 +43,7 @@ type Phrase struct {
 	Actor         string       `json:"actor,omitempty"`
 	Holder        string       `json:"holder,omitempty"`
 	Claimant      string       `json:"claimant,omitempty"`
-	ViolatedWhen  *Expression  `json:"violated-when,omitempty"`
+	ViolatedWhen  []Expression `json:"violated-when,omitempty"`
 	ParentKind    string       `json:"parent-kind,omitempty"`
 
 	// Extra information
@@ -81,7 +81,7 @@ type CompositeFact struct {
 	Creates      []Expression `json:"-"`
 	Terminates   []Expression `json:"-"`
 	Obfuscates   []Expression `json:"-"`
-	ViolatedWhen *Expression  `json:"-"`
+	ViolatedWhen []Expression `json:"-"`
 
 	FactType int `json:"-"`
 }
@@ -131,7 +131,7 @@ type Duty struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty"`
-	ViolatedWhen  Expression   `json:"violated-when"`
+	ViolatedWhen  []Expression `json:"violated-when"`
 }
 
 type Extend struct {

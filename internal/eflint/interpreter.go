@@ -365,7 +365,7 @@ func handleTrigger(operand Expression) error {
 	// Iterate over the given operand
 	for _, expr := range gatherExpressions(operand) {
 		if expr.Identifier == "" {
-			log.Println("Skipping non-identifier expression in trigger")
+			log.Println("Skipping non-identifier expression in trigger", expr)
 			continue
 		}
 
@@ -854,9 +854,9 @@ func handleObfuscate(operand Expression) error {
 func handleBQuery(expression Expression) error {
 	instances := gatherExpressions(expression)
 
-	if len(instances) != 1 {
-		panic("multiple instances in handleBQuery")
-	}
+	//if len(instances) != 1 {
+	//	panic("multiple instances in handleBQuery")
+	//}
 
 	instance := instances[0]
 	result, err := evaluateInstance(instance)
@@ -1123,7 +1123,6 @@ func findVariable(expression Expression) string {
 	return ""
 }
 
-// TODO: When an iterator is found, the variable that the iterator binds should not be replaced
 func findOccurrences(expression *Expression, variable string) []*Expression {
 	if expression.Value != nil {
 		if ref, ok := expression.Value.([]string); ok {
@@ -1131,6 +1130,8 @@ func findOccurrences(expression *Expression, variable string) []*Expression {
 				return []*Expression{expression}
 			}
 		}
+	} else if expression.Operand != nil {
+		return findOccurrences(expression.Operand, variable)
 	} else if expression.Identifier != "" || expression.Operator != "" {
 		var result []*Expression
 		for i := range expression.Operands {
@@ -1151,6 +1152,7 @@ func copyExpression(expression Expression) Expression {
 		Binds:      []string{},
 		Iterator:   expression.Iterator,
 		IsDerived:  expression.IsDerived,
+		Parameter:  expression.Parameter,
 	}
 
 	if expression.Expression != nil {
@@ -1411,7 +1413,7 @@ func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expr
 			close(c)
 		}()
 	} else {
-		log.Println("Unknown expression type", expression.Parameter, ":(")
+		log.Println("Unknown expression type", expression, ":(")
 		panic("Unknown expression type")
 		close(c)
 	}
@@ -1782,12 +1784,38 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 					panic(err)
 				}
 
-				<-signal
 				signal1 <- struct{}{}
 			}
 
 			c <- Expression{
 				Value: false,
+			}
+
+			close(c)
+		}()
+	} else if expression.Iterator == "FORALL" {
+		go func() {
+			signal1 := make(chan struct{})
+			defer close(signal1)
+
+			for expr := range handleExpression(*expression.Expression, signal1) {
+				if eval, err := evaluateInstance(expr); err == nil {
+					if !eval {
+						c <- Expression{
+							Value: false,
+						}
+						close(c)
+						return
+					}
+				} else {
+					panic(err)
+				}
+
+				signal1 <- struct{}{}
+			}
+
+			c <- Expression{
+				Value: true,
 			}
 
 			close(c)

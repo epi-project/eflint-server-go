@@ -48,6 +48,7 @@ var (
 		{`Claimant`, `Claimant`},
 
 		{`Foreach`, `Foreach`},
+		{`Forall`, `Forall`},
 		{`For`, `For`},
 		{`When`, `When`},
 
@@ -246,7 +247,7 @@ func (e Event) phrase() {}
 type Act struct {
 	Kind          string       `json:"kind"                     parser:"Act" default:"Act"`
 	Name          string       `json:"name"                     parser:"@FactID"`
-	Actor         string       `json:"actor,omitempty"          parser:"Actor @(DecoratedFactID | FactID)"`
+	Actor         string       `json:"actor,omitempty"          parser:"(Actor @(DecoratedFactID | FactID))?"`
 	Recipient     string       `json:"-"                        parser:"(Recipient @(DecoratedFactID | FactID))?"`
 	RelatedTo     []string     `json:"related-to,omitempty"     parser:"(RelatedTo @(DecoratedFactID | FactID) ( Comma @(DecoratedFactID | FactID) )*)?"`
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
@@ -279,7 +280,7 @@ type Duty struct {
 	DerivedFrom   []Expression `json:"derived-from,omitempty"   parser:"( (DerivedFrom   @@ (Comma @@)*)"`
 	HoldsWhen     []Expression `json:"holds-when,omitempty"     parser:"| (HoldsWhen     @@ (Comma @@)*)"`
 	ConditionedBy []Expression `json:"conditioned-by,omitempty" parser:"| (ConditionedBy @@ (Comma @@)*) )*"`
-	ViolatedWhen  Expression   `json:"violated-when"            parser:"ViolatedWhen @@"`
+	ViolatedWhen  []Expression `json:"violated-when,omitempty"  parser:"(ViolatedWhen @@ (Comma @@)*)*"`
 }
 
 func (d Duty) phrase() {}
@@ -316,7 +317,7 @@ type Expression interface {
 
 func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 	switch peek := lex.Peek(); {
-	case peek.Value == "Foreach" || peek.Value == "Exists":
+	case peek.Value == "Foreach" || peek.Value == "Exists" || peek.Value == "Forall":
 		lex.Next()
 
 		binds := make([]string, 0)
@@ -751,6 +752,9 @@ func ParseFile(filename string, file *os.File) ([]byte, error) {
 			a.Kind = "act"
 			if a.Recipient != "" {
 				a.RelatedTo = append([]string{a.Recipient}, a.RelatedTo...)
+			}
+			if a.Actor == "" {
+				a.Actor = "actor"
 			}
 			ini.Phrases[i] = a
 		case Duty:

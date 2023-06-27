@@ -42,6 +42,6 @@ Act cast_vote Actor citizen Recipient candidate.
 +candidate(C).
 +cast_vote.
 ?!Holds(cast_vote(A,C)).
-?!Holds(cast_vote(B,C)).y
+?!Holds(cast_vote(B,C)).
 ?!Holds(cast_vote(C,C)).
 ?!Holds(cast_vote(A,B)).

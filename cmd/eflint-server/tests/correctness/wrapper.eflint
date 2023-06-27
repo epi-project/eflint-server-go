@@ -1,7 +1,7 @@
-Fact a Identified by A1, A2.
-Fact b Identified by B1, B2.
-Fact comp Identified by a * b.
-Fact wrapped Identified by comp.
+Fact a Identified by A1, A2
+Fact b Identified by B1, B2
+Fact comp Identified by a * b
+Fact wrapped Identified by comp
 Event wrap Related to comp Creates wrapped().
 wrap(comp(A1,B2)).
 ?wrapped(comp(A1,B2)).
