@@ -74,7 +74,7 @@ var (
 		{`Neg`, `!`},
 
 		{`Int`, `[0-9]+`},
-		{`String`, `[A-Z][a-z0-9]*`},
+		{`String`, `([A-Z][a-z0-9]*)|"([A-Z][a-z0-9]*)"`},
 
 		// Statements
 		{`IqueryHolds`, `\?--`},
