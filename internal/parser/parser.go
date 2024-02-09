@@ -423,7 +423,7 @@ func parseExpressionAtom(lex *lexer.PeekingLexer) (Expression, error) {
 
 		return Reference{id.Value}, nil
 	case peek.Type == eflintLexer.Symbols()["String"]:
-		return String{lex.Next().Value}, nil
+		return String{strings.Trim(lex.Next().Value, "\"")}, nil
 	case peek.Type == eflintLexer.Symbols()["Int"]:
 		val, err := strconv.ParseInt(lex.Next().Value, 10, 64)
 		if err != nil {
