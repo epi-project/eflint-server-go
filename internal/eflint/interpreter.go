@@ -269,6 +269,7 @@ func handleExtend(phrase Phrase) error {
 func handlePredicate(phrase Phrase) error {
 	// A predicate is a fact without parameters
 	err := handleAtomicFact(Phrase{
+		Kind:        phrase.Kind,
 		Name:        phrase.Name,
 		HoldsWhen:   []Expression{*phrase.Expression},
 		IsInvariant: phrase.IsInvariant,
@@ -286,6 +287,7 @@ func handlePredicate(phrase Phrase) error {
 func handleEvent(phrase Phrase) error {
 	// An event is a composite fact
 	return handleCompositeFact(Phrase{
+		Kind:          phrase.Kind,
 		Name:          phrase.Name,
 		IdentifiedBy:  phrase.RelatedTo,
 		DerivedFrom:   phrase.DerivedFrom,
@@ -301,6 +303,7 @@ func handleEvent(phrase Phrase) error {
 
 func handleAct(phrase Phrase) error {
 	return handleCompositeFact(Phrase{
+		Kind:          phrase.Kind,
 		Name:          phrase.Name,
 		IdentifiedBy:  append([]string{phrase.Actor}, phrase.RelatedTo...),
 		DerivedFrom:   phrase.DerivedFrom,
@@ -316,6 +319,7 @@ func handleAct(phrase Phrase) error {
 
 func handleDuty(phrase Phrase) error {
 	return handleCompositeFact(Phrase{
+		Kind:          phrase.Kind,
 		Name:          phrase.Name,
 		IdentifiedBy:  append([]string{phrase.Holder, phrase.Claimant}, phrase.RelatedTo...),
 		DerivedFrom:   phrase.DerivedFrom,
