@@ -2,11 +2,12 @@ package eflint
 
 import (
 	"fmt"
-	"github.com/mitchellh/hashstructure/v2"
-	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"log"
 	"reflect"
 	"strings"
+
+	"github.com/mitchellh/hashstructure/v2"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 var (
@@ -45,7 +46,8 @@ func InterpretPhrases(phrases []Phrase) {
 
 	initializeFacts()
 
-	for _, phrase := range phrases {
+	for i, phrase := range phrases {
+		log.Println("Interpreting phrase", i+1, "/", len(phrases))
 		if err := InterpretPhrase(phrase); err != nil {
 			// TODO: Stop after first error? Or continue?
 			log.Println(err, "oh no")
@@ -132,6 +134,7 @@ func InterpretPhrase(phrase Phrase) error {
 
 	var err error = nil
 
+	log.Println("Handling", phrase.Kind)
 	switch phrase.Kind {
 	case "afact":
 		err = handleAtomicFact(phrase)
@@ -174,6 +177,7 @@ func InterpretPhrase(phrase Phrase) error {
 
 	index := len(globalResults) - 1
 
+	log.Println("Deriving facts...")
 	if derivationVersion == 1 {
 		DeriveFacts()
 	} else if derivationVersion == 2 {
@@ -183,6 +187,7 @@ func InterpretPhrase(phrase Phrase) error {
 	} else {
 		panic("unknown derivation version")
 	}
+	log.Println("Derived facts")
 
 	listViolations()
 
@@ -883,11 +888,14 @@ func handleBQuery(expression Expression) error {
 
 func isFiniteFact(factName string) bool {
 	factName = getFactName(factName)
+	log.Println("Is", factName, "a finite fact?")
 
 	if fact, ok := globalState["facts"][factName]; ok {
 		if afact, ok := fact.(AtomicFact); ok {
+			log.Println("Inherently atomic; yes iff len(afact.Range) > 0 || afact.Type == \"\". Is?", len(afact.Range) > 0 || afact.Type == "")
 			return len(afact.Range) > 0 || afact.Type == ""
 		} else if cfact, ok := fact.(CompositeFact); ok {
+			log.Println("Composite; yes iff all fields are.")
 			for _, param := range cfact.IdentifiedBy {
 				if !isFiniteFact(param) {
 					return false
@@ -912,6 +920,7 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 	}
 
 	if isFiniteFact(factName) {
+		log.Println("Finite fact", factName)
 		// Iterate over all possible instances for finite facts
 		go func() {
 			if fact, ok := globalState["facts"][factName].(AtomicFact); ok {
@@ -951,14 +960,18 @@ func iterateFact(factName string) <-chan ConstructorApplication {
 		}()
 	} else {
 		// Iterate over all known instances for infinite facts
-		//log.Println("Infinite fact")
+		log.Println("Infinite fact", factName)
 		go func() {
+			i := 0
 			for pair := globalInstances[factName].Oldest(); pair != nil; pair = pair.Next() {
+				log.Println(" - Found value '", formatExpression(pair.Value), "'")
 				c <- ConstructorApplication{
 					Identifier: pair.Value.Identifier,
 					Operands:   pair.Value.Operands,
 				}
+				i += 1
 			}
+			log.Println("Done with", factName, "(", i, "facts)")
 			close(c)
 		}()
 	}
@@ -1018,6 +1031,8 @@ func formatExpression(expression Expression) string {
 		expr1 := formatExpression(expression.Operands[0])
 		if expression.Operator == "NOT" {
 			return "!" + expr1
+		} else if expression.Operator == "COUNT" {
+			return "Count(" + expr1 + ")"
 		}
 		expr2 := formatExpression(expression.Operands[1])
 
@@ -1052,12 +1067,23 @@ func formatExpression(expression Expression) string {
 			return expr1 + " When " + expr2
 		}
 	} else if expression.Iterator != "" {
-		keyword := expression.Iterator[:1] + strings.ToLower(expression.Iterator[1:])
-		if expression.Iterator == "EXISTS" || expression.Iterator == "FOREACH" {
-			return keyword + expression.Binds[0] + " : " + formatExpression(expression.Operands[0])
+		result := expression.Iterator[:1] + strings.ToLower(expression.Iterator[1:])
+		first := true
+		for _, bind := range expression.Binds {
+			if first {
+				result += " "
+				first = false
+			} else {
+				result += ", "
+			}
+			result += bind
 		}
+		return result + " : " + "(" + formatExpression(*expression.Expression) + ")"
+		// if expression.Iterator == "EXISTS" || expression.Iterator == "FOREACH" {
+		// 	return keyword + expression.Binds[0] + " : " + formatExpression(*expression.Expression)
+		// }
 
-		return keyword + "(" + formatExpression(expression.Operands[0]) + ")"
+		// return keyword + "(" + formatExpression(expression.Operands[0]) + ")"
 	} else if expression.Parameter != "" {
 		return formatExpression(*expression.Operand) + "." + expression.Parameter
 	}
@@ -1203,6 +1229,7 @@ func evaluateInstance(instance Expression) (bool, error) {
 		if findVariable(instance) != "" {
 			panic("instance contains variables")
 		}
+		log.Println("expression.Value != nil")
 
 		instance, err := convertInstance(instance)
 		if err != nil {
@@ -1253,6 +1280,7 @@ func gatherExpressions(expression Expression) []Expression {
 // TODO: This can return any expression
 func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expression {
 	c := make(chan Expression)
+	log.Println("HANDLING [", formatExpression(expression), "]")
 
 	if err := TypeCheckExpression(&expression); err != nil {
 		panic(err)
@@ -1261,8 +1289,11 @@ func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expr
 	// Check if there are any variables in the expression
 	ref := findVariable(expression)
 	if ref != "" {
+		log.Println("Expression '", formatExpression(expression), "' refers to variable '", ref, "'")
+
 		// Find all occurrences of the variable
-		occurrences := findOccurrences(&expression, ref)
+		// occurrences := findOccurrences(&expression, ref)
+		// log.Println("Variable '", ref, "' occurs", len(occurrences), "time(s)")
 
 		go func() {
 			// Iterate over all instances of the variable
@@ -1270,39 +1301,55 @@ func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expr
 
 			for instance := range iterateFact(ref) {
 				// Replace all occurrences of the variable with the instance
-				for _, occurrence := range occurrences {
+				expression := copyExpression(expression)
+				occurrences := findOccurrences(&expression, ref)
+				log.Println("Variable '", ref, "' occurs", len(occurrences), "time(s)")
+				for i, occurrence := range occurrences {
+					log.Println("   ", i, "WAS '", formatExpression(*occurrence), "'")
 					*occurrence = Expression{
 						Identifier: instance.Identifier,
 						Operands:   instance.Operands,
 					}
+					log.Println("   ", i, "IS '", formatExpression(*occurrence), "'")
 				}
 
-				for result := range handleExpression(copyExpression(expression), signal2) {
+				log.Println("PRE-PRE-WAITING [2]", formatExpression(expression))
+				for result := range handleExpression(expression, signal2) {
+					log.Println("PRE-WAITING [2]")
 					c <- copyExpression(result)
 
+					log.Println("WAITING [2]")
 					<-signal
+					log.Println("NO MORE WAITING [2]")
 					signal2 <- struct{}{}
 				}
+				log.Println("POST-WAITING [2]", formatExpression(expression))
 			}
 
-			// Put the original expression back
-			for _, occurrence := range occurrences {
-				*occurrence = Expression{
-					Value: []string{ref},
-				}
-			}
+			// // Put the original expressions back
+			// for i, occurrence := range occurrences {
+			// 	log.Println("   ", i, "(b) WAS '", formatExpression(*occurrence), "'")
+			// 	*occurrence = Expression{
+			// 		Value: []string{ref},
+			// 	}
+			// 	log.Println("   ", i, "(b) IS '", formatExpression(*occurrence), "'")
+			// }
 
 			close(signal2)
 			close(c)
 			select {
-			case _, _ = <-signal:
+			case <-signal:
+				break
 			default:
 				break
 			}
 		}()
 
+		log.Println("Early quit found variables")
+		// close(c)
 		return c
 	}
+	log.Println("Expression '", formatExpression(expression), "' does not refer to variable(s)")
 
 	if ref, ok := expression.Value.([]string); ok {
 		if len(ref) != 1 {
@@ -1369,6 +1416,7 @@ func handleExpression(expression Expression, signal <-chan struct{}) <-chan Expr
 			// TODO: CHeck if this is correct (It is not!)
 			expression.Operands[i], ok = <-handleExpression(expression.Operands[i], signal2)
 			if !ok {
+				panic("wah")
 				close(signal2)
 				close(c)
 				return c
@@ -1468,6 +1516,7 @@ func instanceToInt(expression Expression) Expression {
 
 func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expression {
 	c := make(chan Expression)
+	log.Println("HANDLING OPERATOR [", formatExpression(expression), "] (", expression.Operator, ")")
 
 	if expression.Operator == "ADD" || expression.Operator == "SUB" || expression.Operator == "MUL" || expression.Operator == "DIV" || expression.Operator == "MOD" ||
 		expression.Operator == "LT" || expression.Operator == "GT" || expression.Operator == "LTE" || expression.Operator == "GTE" {
@@ -1632,13 +1681,19 @@ func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expres
 	} else if expression.Operator == "WHEN" {
 		signal1 := make(chan struct{})
 
+		log.Println("WHEN:: Evaluating operand[1] (clause) '", formatExpression(expression.Operands[1]), "'")
 		expr := <-handleExpression(expression.Operands[1], signal1)
+		log.Println("WHEN:: Evaluated operand[1] (clause) '", formatExpression(expression.Operands[1]), "' as '", formatExpression(expr), "'")
 
 		//log.Println("WHEN", formatExpression(expression.Operands[0]), expr)
 
 		if eval, err := evaluateInstance(expr); err == nil && eval {
+			log.Println("WHEN:: Evaluation checks out, producing instance")
+			signal1 <- struct{}{}
 			go func() {
+				log.Println("WHEN:: Evaluating operand[0] (what) '", formatExpression(expression.Operands[0]), "'")
 				for expr := range handleExpression(expression.Operands[0], signal1) {
+					log.Println("WHEN:: Evaluated operand[0] (what) '", formatExpression(expression.Operands[0]), "' as '", formatExpression(expr), "'")
 					c <- expr
 
 					<-signal
@@ -1650,6 +1705,7 @@ func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expres
 			}()
 		} else {
 			//log.Println("When is false")
+			log.Println("WHEN:: Evaluation not checking out, instance is gone")
 			close(c)
 			close(signal1)
 		}
@@ -1755,13 +1811,18 @@ func handleOperator(expression Expression, signal <-chan struct{}) <-chan Expres
 
 func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expression {
 	c := make(chan Expression)
+	log.Println("HANDLING ITERATOR '", formatExpression(expression), "'")
 
 	if expression.Iterator == "FOREACH" {
+		log.Println("HANDLING FOREACH '", formatExpression(expression), "'")
 		go func() {
+			log.Println("FOREACH:: Iterating '", formatExpression(expression), "'")
 			signal1 := make(chan struct{})
 			defer close(signal1)
 
+			log.Println("FOREACH:: Evaluating '", formatExpression(*expression.Expression), "'")
 			for expr := range handleExpression(*expression.Expression, signal1) {
+				log.Println("FOREACH:: Evaluated '", formatExpression(*expression.Expression), "' to '", formatExpression(expr), "'")
 				c <- copyExpression(expr)
 
 				<-signal
@@ -1769,25 +1830,32 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 			}
 
 			close(c)
+			log.Println("FOREACH:: Done")
 		}()
 	} else if expression.Iterator == "EXISTS" {
+		log.Println("HANDLING EXISTS '", formatExpression(expression), "'")
 		go func() {
+			log.Println("EXISTS:: Iterating '", formatExpression(expression), "'")
 			signal1 := make(chan struct{})
 			defer close(signal1)
 
+			log.Println("EXISTS:: Evaluating '", formatExpression(*expression.Expression), "'")
 			for expr := range handleExpression(*expression.Expression, signal1) {
+				log.Println("EXISTS:: Evaluated '", formatExpression(*expression.Expression), "' to '", formatExpression(expr), "'")
 				if eval, err := evaluateInstance(expr); err == nil {
 					if eval {
 						c <- Expression{
 							Value: true,
 						}
 						close(c)
+						log.Println("EXISTS:: Done (triggered)")
 						return
 					}
 				} else {
 					panic(err)
 				}
 
+				// <-signal
 				signal1 <- struct{}{}
 			}
 
@@ -1796,25 +1864,32 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 			}
 
 			close(c)
+			log.Println("EXISTS:: Done (no triggers)")
 		}()
 	} else if expression.Iterator == "FORALL" {
+		log.Println("HANDLING FORALL '", formatExpression(expression), "'")
 		go func() {
+			log.Println("FORALL:: Iterating '", formatExpression(expression), "'")
 			signal1 := make(chan struct{})
 			defer close(signal1)
 
+			log.Println("FORALL:: Evaluating '", formatExpression(*expression.Expression), "'")
 			for expr := range handleExpression(*expression.Expression, signal1) {
+				log.Println("FORALL:: Evaluated '", formatExpression(*expression.Expression), "' to '", formatExpression(expr), "'")
 				if eval, err := evaluateInstance(expr); err == nil {
 					if !eval {
 						c <- Expression{
 							Value: false,
 						}
 						close(c)
+						log.Println("FORALL:: Done (triggered)")
 						return
 					}
 				} else {
 					panic(err)
 				}
 
+				// <-signal
 				signal1 <- struct{}{}
 			}
 
@@ -1823,6 +1898,7 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 			}
 
 			close(c)
+			log.Println("FORALL:: Done (no triggers)")
 		}()
 	} else {
 		log.Println("Unknown iterator", expression)
@@ -1835,12 +1911,16 @@ func handleIterator(expression Expression, signal <-chan struct{}) <-chan Expres
 func handleProjection(expression Expression, signal <-chan struct{}) <-chan Expression {
 	//log.Println("Projection", expression.Parameter, expression.Operand)
 	c := make(chan Expression)
+	log.Println("HANDLING PROJECTION (", formatExpression(*expression.Operand), ") . ", expression.Parameter)
 
 	go func() {
 		signal1 := make(chan struct{})
 		defer close(signal1)
 
+		log.Println("Recursing projection operand '", formatExpression(*expression.Operand), "'")
 		for expr := range handleExpression(*expression.Operand, signal1) {
+			log.Println("Considering projection", formatExpression(expr), "for", formatExpression(*expression.Operand))
+
 			if expr.Identifier == "" {
 				panic("Cannot project non-identifier")
 			}
@@ -1874,6 +1954,8 @@ func handleProjection(expression Expression, signal <-chan struct{}) <-chan Expr
 				panic("Cannot project atomic fact")
 			}
 		}
+
+		close(c)
 	}()
 
 	return c

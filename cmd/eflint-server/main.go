@@ -2,9 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
 	"log"
 	"net/http"
+
+	"github.com/Olaf-Erkemeij/eflint-server/internal/eflint"
 )
 
 // handler for the root path
@@ -50,7 +51,28 @@ func eFLINTHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Do something with the input
 	switch input.Kind {
 	case "phrases":
+		log.Println("Handling phrases request")
+
+		log.Println("Interpreting phrases...")
 		eflint.InterpretPhrases(input.Phrases)
+
+		// Write the response
+		log.Println("Generating JSON...")
+		output, err := eflint.GenerateJSON(eflint.Output{Success: true})
+		//output, err := eflint.GenerateJSON(eflint.Output{Success: true, Phrases: input.Phrases})
+
+		log.Println("Considering errors...")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Println("Writing output...")
+		w.Write(output)
+
+		log.Println("Handled phrases request")
+		return
+
 	case "handshake":
 		handshake, err := eflint.GenerateHandshake()
 		if err != nil {
@@ -60,25 +82,12 @@ func eFLINTHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(handshake)
 		return
 	case "ping":
+		return
 	default:
 		// TODO: This should have been handled by a typecheck function
 		http.Error(w, "Unknown kind", http.StatusBadRequest)
 		return
 	}
-
-	// Write the response
-	output, err := eflint.GenerateJSON(eflint.Output{Success: true})
-	//output, err := eflint.GenerateJSON(eflint.Output{Success: true, Phrases: input.Phrases})
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(output)
-	//log.Println("Handled request")
-
-	return
 }
 
 func main() {

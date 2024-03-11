@@ -1,6 +1,8 @@
 package eflint
 
 import (
+	"log"
+
 	"github.com/mitchellh/hashstructure/v2"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
@@ -76,6 +78,7 @@ func DeriveFacts3() {
 	customDerivation = true
 
 	for len(globalQueue) > 0 {
+		log.Println("globalQueue length", len(globalQueue))
 		name := globalQueue[0]
 		globalQueue = globalQueue[1:]
 
@@ -87,6 +90,7 @@ func DeriveFacts3() {
 			globalQueue = append(globalQueue, dependency)
 		}
 	}
+	log.Println("Made it past the globalQueue")
 
 	CheckViolations()
 
@@ -129,6 +133,7 @@ func deriveFact3(fact interface{}) bool {
 			signal := make(chan struct{}, 1)
 			tempAssumptions = make([]*Assumptions, 0)
 
+			log.Println("Examining expressions in rules")
 			for expr := range handleExpression(rule, signal) {
 				if expr.Identifier != name {
 					expr = Expression{
@@ -140,6 +145,7 @@ func deriveFact3(fact interface{}) bool {
 				//log.Println("Derived", name, "with", expr)
 
 				for _, assumptions := range tempAssumptions {
+					log.Println("Temp length", len(tempAssumptions))
 					if _, ok := globalAssumptions[assumptions.Expression]; !ok {
 						globalAssumptions[assumptions.Expression] = assumptions
 					}
@@ -172,10 +178,12 @@ func deriveFact3(fact interface{}) bool {
 
 				signal <- struct{}{}
 			}
+			log.Println("Exmined expressions in rules")
 
 			close(signal)
 		}
 	}
+	log.Println("Finished handling changes")
 
 	for pair := oldDerived.Oldest(); pair != nil; pair = pair.Next() {
 		if _, ok := globalInstances[name].Get(pair.Key); !ok {

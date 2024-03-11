@@ -1,0 +1,4 @@
+cmd/eflint-server/__debug*
+cmd/eflint-server/eflint-server
+cmd/eflint-to-json/__debug*
+cmd/eflint-to-json/eflint-to-json
